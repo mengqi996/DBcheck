@@ -111,8 +111,15 @@ chown -R "${APP_USER}:${APP_GROUP}" "${APP_DIR}/app"
 chmod 750 "${APP_DIR}/app"
 
 echo ">>> Copying frontend index.html to ${APP_DIR}/ ..."
-install -m 644 -o "${APP_USER}" -g "${APP_GROUP}" \
-    "${FRONTEND_SRC}" "${APP_DIR}/index.html"
+FRONTEND_DST="${APP_DIR}/index.html"
+if [[ "$(readlink -f "${FRONTEND_SRC}")" == "$(readlink -f "${FRONTEND_DST}")" ]]; then
+    echo ">>> Frontend already in place; normalizing permissions ..."
+    chown "${APP_USER}:${APP_GROUP}" "${FRONTEND_DST}"
+    chmod 644 "${FRONTEND_DST}"
+else
+    install -m 644 -o "${APP_USER}" -g "${APP_GROUP}" \
+        "${FRONTEND_SRC}" "${FRONTEND_DST}"
+fi
 
 # ============================================================
 # Python venv + dependencies
