@@ -1,0 +1,40 @@
+[Unit]
+Description=DBCheck database management platform
+Documentation=https://github.com/your-org/dbcheck
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dbcheck
+Group=dbcheck
+WorkingDirectory=/opt/dbcheck/app
+
+# Environment variables live in /opt/dbcheck/.env (chmod 640).
+EnvironmentFile=/opt/dbcheck/.env
+
+# Bind to localhost only — front it with Nginx or a firewall rule if you
+# need external access. The install.sh script opens 8000/tcp in firewalld.
+ExecStart=/opt/dbcheck/venv/bin/python -m uvicorn main:app \
+    --host 127.0.0.1 --port 8000 --log-level info
+
+# Auto-restart on failure (not on clean stop).
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+# Hardening — DBCheck only needs its data dir and the bundled app.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/dbcheck/data /opt/dbcheck/logs
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,150 @@
+# -*- coding: utf-8 -*-
+"""
+慢 SQL 异步调度器
+
+FastAPI lifespan 中创建，启动后台 asyncio 任务，每隔 interval_seconds
+对所有 enabled binding 拉取一次慢日志。手动触发由 trigger_now() 提供。
+"""
+
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import Optional
+
+import slow_query_service
+import storage
+
+
+logger = logging.getLogger("dbcheck.scheduler")
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+class SlowQueryScheduler:
+    def __init__(self, interval_seconds: int = 3600, max_concurrency: int = 4):
+        self.interval_seconds = max(5, int(interval_seconds))
+        self._sem = asyncio.Semaphore(max_concurrency)
+        self._tick_lock = asyncio.Lock()
+        self._task: Optional[asyncio.Task] = None
+        self._stop_event: Optional[asyncio.Event] = None
+        self._trigger_event: Optional[asyncio.Event] = None
+        self._last_tick_at: Optional[str] = None
+        self._active_polls = 0
+        self._manual_lock = asyncio.Lock()
+        self._last_manual_at: float = 0.0
+
+    # ----- 生命周期 -----
+
+    async def start(self) -> None:
+        if self._task and not self._task.done():
+            return
+        self._stop_event = asyncio.Event()
+        self._trigger_event = asyncio.Event()
+        self._task = asyncio.create_task(self._run(), name="slow-query-scheduler")
+        logger.info("SlowQueryScheduler started (interval=%ss)", self.interval_seconds)
+
+    async def stop(self) -> None:
+        if not self._task:
+            return
+        if self._stop_event:
+            self._stop_event.set()
+        try:
+            await asyncio.wait_for(self._task, timeout=5.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            self._task.cancel()
+        self._task = None
+        self._stop_event = None
+        self._trigger_event = None
+        logger.info("SlowQueryScheduler stopped")
+
+    # ----- 状态 -----
+
+    def status(self) -> dict:
+        snap = storage.binding_poll_status_snapshot()
+        return {
+            "running": bool(self._task and not self._task.done()),
+            "interval_seconds": self.interval_seconds,
+            "last_tick_at": self._last_tick_at,
+            "bindings_count": snap["total"],
+            "enabled_bindings": snap["enabled"],
+            "failing_bindings": snap["failing"],
+            "active_polls": self._active_polls,
+        }
+
+    # ----- 手动触发 -----
+
+    async def trigger_now(self) -> bool:
+        """手动触发一次同步；5s 内重复触发被忽略。返回是否真正触发。"""
+        import time
+        now = time.time()
+        if now - self._last_manual_at < 5.0:
+            return False
+        async with self._manual_lock:
+            now = time.time()
+            if now - self._last_manual_at < 5.0:
+                return False
+            self._last_manual_at = now
+        if self._task and not self._task.done() and self._trigger_event:
+            self._trigger_event.set()
+        else:
+            await self._tick()
+        return True
+
+    # ----- 主循环 -----
+
+    async def _run(self) -> None:
+        assert self._stop_event is not None
+        assert self._trigger_event is not None
+        stop_event: asyncio.Event = self._stop_event
+        trigger_event: asyncio.Event = self._trigger_event
+
+        while not stop_event.is_set():
+            try:
+                # 同时等待 interval 超时或 stop / trigger 信号
+                done, _pending = await asyncio.wait(
+                    [
+                        asyncio.create_task(stop_event.wait()),
+                        asyncio.create_task(trigger_event.wait()),
+                        asyncio.create_task(asyncio.sleep(self.interval_seconds)),
+                    ],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                # 取消未完成项
+                for t in done:
+                    pass
+                # 显式取消所有未完成任务
+                for t in asyncio.all_tasks():
+                    if t in _pending:
+                        t.cancel()
+                if trigger_event.is_set():
+                    trigger_event.clear()
+                if stop_event.is_set():
+                    break
+                await self._tick()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:  # noqa: BLE001
+                logger.exception("scheduler tick failed: %s", e)
+                # 退避 5s 后继续
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    pass
+
+    async def _tick(self) -> None:
+        async with self._tick_lock:
+            self._last_tick_at = _utc_now_iso()
+            bindings = storage.list_bindings(enabled_only=True)
+            if bindings:
+                await asyncio.gather(*(self._poll_with_sem(b) for b in bindings))
+            await asyncio.to_thread(storage.purge_old_slow_queries)
+
+    async def _poll_with_sem(self, binding: dict) -> None:
+        async with self._sem:
+            self._active_polls += 1
+            try:
+                await asyncio.to_thread(slow_query_service.poll_one_binding, binding)
+            finally:
+                self._active_polls -= 1

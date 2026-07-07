@@ -1,0 +1,53 @@
+# =============================================================
+# DBCheck .gitignore
+# =============================================================
+
+# ---- Sensitive data — NEVER commit these ----
+# The local SQLite database holds instance/backup/slow-query records
+# AND the encrypted Tencent Cloud secret_key. The Fernet key file
+# is what decrypts it — losing it from the repo leaks credentials.
+backend/dbcheck.db
+backend/dbcheck.db-journal
+backend/.fernet_key
+*.sqlite
+*.sqlite3
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- macOS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ---- IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Project-specific runtime artifacts ----
+# Logs are noisy and may contain connection strings / errors with
+# hostnames. They regenerate on every service start.
+*.log
+logs/
+run/
+.env
+!.env.example

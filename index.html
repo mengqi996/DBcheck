@@ -1,0 +1,4361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DBCheck 数据库运维平台</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        :root {
+            --bg: #f6f7f9;
+            --surface: #ffffff;
+            --surface-soft: #f1f4f6;
+            --line: #d9dee4;
+            --text: #20242a;
+            --muted: #66707a;
+            --teal: #0f8f8c;
+            --teal-dark: #0b6f6d;
+            --green: #27864f;
+            --amber: #b97812;
+            --red: #bd3b33;
+            --violet: #6b5fb5;
+            --shadow: 0 10px 28px rgba(33, 42, 52, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-width: 1120px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            font-size: 14px;
+        }
+
+        button, input, select, textarea {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 244px 1fr;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            background: #ffffff;
+            border-right: 1px solid var(--line);
+            padding: 18px 14px;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            height: 44px;
+            padding: 0 10px 16px;
+            border-bottom: 1px solid var(--line);
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .brand-mark {
+            width: 30px;
+            height: 30px;
+            display: grid;
+            place-items: center;
+            border-radius: 6px;
+            background: #e4f4f3;
+            color: var(--teal);
+        }
+
+        .nav-title {
+            color: var(--muted);
+            font-size: 12px;
+            margin: 22px 10px 8px;
+            flex: 0 0 auto;
+        }
+
+        .sidebar-nav {
+            display: grid;
+            grid-auto-rows: minmax(66px, 1fr);
+            gap: 8px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .nav-item {
+            width: 100%;
+            min-height: 66px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            background: transparent;
+            color: #38414b;
+            padding: 10px;
+            text-align: left;
+            transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+        }
+
+        .nav-item:hover {
+            background: var(--surface-soft);
+            border-color: #e4e9ee;
+        }
+
+        .nav-item.active {
+            background: #dff2f0;
+            border-color: #bfe4e1;
+            color: var(--teal-dark);
+            font-weight: 600;
+        }
+
+        .nav-icon {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+            border-radius: 8px;
+            border: 1px solid #dce5ea;
+            background: #f8fafb;
+            color: #55616d;
+        }
+
+        .nav-item.active .nav-icon {
+            background: var(--teal);
+            border-color: var(--teal);
+            color: #ffffff;
+        }
+
+        .nav-text {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .nav-label {
+            line-height: 1.2;
+        }
+
+        .nav-desc {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 400;
+            line-height: 1.2;
+        }
+
+        .nav-item.active .nav-desc {
+            color: #2e7775;
+        }
+
+        .nav-item .nav-icon svg {
+            width: 18px;
+            height: 18px;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .icon {
+            width: 17px;
+            height: 17px;
+            flex: 0 0 auto;
+        }
+
+        .main {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topbar {
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 0 26px;
+            background: #ffffff;
+            border-bottom: 1px solid var(--line);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+
+        .topbar h1 {
+            margin: 0;
+            font-size: 18px;
+            letter-spacing: 0;
+        }
+
+        .topbar-meta {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .content {
+            padding: 24px 26px 36px;
+        }
+
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+
+        .toolbar-left,
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            padding: 0 12px;
+            background: #ffffff;
+            color: #2d343c;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            border-color: #b9c2ca;
+        }
+
+        .btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.62;
+        }
+
+        .btn-primary {
+            background: var(--teal);
+            color: #ffffff;
+            border-color: var(--teal);
+        }
+
+        .btn-primary:hover {
+            background: var(--teal-dark);
+            border-color: var(--teal-dark);
+        }
+
+        .btn-danger {
+            color: var(--red);
+            border-color: #efc8c4;
+        }
+
+        .icon-btn {
+            width: 34px;
+            height: 34px;
+            padding: 0;
+        }
+
+        .input,
+        .select,
+        .textarea {
+            border: 1px solid var(--line);
+            background: #ffffff;
+            color: var(--text);
+            border-radius: 6px;
+            outline: none;
+        }
+
+        .input,
+        .select {
+            height: 34px;
+            padding: 0 10px;
+        }
+
+        .input:focus,
+        .select:focus,
+        .textarea:focus {
+            border-color: var(--teal);
+            box-shadow: 0 0 0 3px rgba(15, 143, 140, 0.14);
+        }
+
+        .search {
+            width: 260px;
+        }
+
+        .grid {
+            display: grid;
+            gap: 14px;
+        }
+
+        .summary-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            margin-bottom: 18px;
+        }
+
+        .stat-card,
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+        }
+
+        .stat-card {
+            padding: 16px;
+            min-height: 116px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .stat-card.clickable {
+            cursor: pointer;
+            transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .stat-card.clickable:hover,
+        .stat-card.clickable:focus-visible {
+            border-color: var(--teal);
+            transform: translateY(-1px);
+            box-shadow: 0 12px 30px rgba(15, 143, 140, 0.14);
+            outline: none;
+        }
+
+        .stat-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .stat-label {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .stat-value {
+            margin-top: 10px;
+            font-size: 28px;
+            line-height: 1;
+            font-weight: 750;
+        }
+
+        .stat-foot {
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 12px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 22px;
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-size: 12px;
+            white-space: nowrap;
+            border: 1px solid transparent;
+        }
+
+        .badge.online,
+        .badge.success {
+            color: var(--green);
+            background: #e8f5ed;
+            border-color: #cde8d7;
+        }
+
+        .badge.warning,
+        .badge.running,
+        .badge.pending {
+            color: var(--amber);
+            background: #fff3df;
+            border-color: #f0d4a5;
+        }
+
+        .badge.offline,
+        .badge.failed {
+            color: var(--red);
+            background: #fdecea;
+            border-color: #efcac6;
+        }
+
+        .badge.type {
+            color: #3d4650;
+            background: #eef1f4;
+            border-color: #dce2e8;
+        }
+
+        .panel-header {
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 16px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .panel-title {
+            font-weight: 700;
+        }
+
+        .panel-subtitle {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .panel-body {
+            padding: 16px;
+        }
+
+        .table-wrap {
+            overflow: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 11px 12px;
+            border-bottom: 1px solid #edf0f2;
+            text-align: left;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        th {
+            background: #f8fafb;
+            color: #5d6872;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        tr:hover td {
+            background: #fbfcfd;
+        }
+
+        .cell-main {
+            font-weight: 650;
+        }
+
+        .backup-name-cell {
+            max-width: 380px;
+        }
+
+        .backup-name-content {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .backup-name-text {
+            display: block;
+            min-width: 0;
+            max-width: min(360px, 32vw);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 650;
+        }
+
+        .backup-name-content .badge {
+            flex: 0 0 auto;
+        }
+
+        .cell-sub {
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 3px;
+        }
+
+        .actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .monitor-layout {
+            display: grid;
+            grid-template-columns: 360px minmax(0, 1fr);
+            gap: 14px;
+        }
+
+        .monitor-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .monitor-dimensions {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+
+        .metric-shortcuts {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .metric-chip {
+            min-height: 58px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 4px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #ffffff;
+            color: #2d343c;
+            padding: 9px 10px;
+            text-align: left;
+        }
+
+        .metric-chip:hover,
+        .metric-chip.active {
+            border-color: var(--teal);
+            background: #effafa;
+            color: var(--teal-dark);
+        }
+
+        .metric-chip strong,
+        .metric-chip span {
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            line-height: 1.2;
+        }
+
+        .metric-chip strong {
+            font-size: 13px;
+        }
+
+        .metric-chip span {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .metric-picker-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+
+        .metric-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .metric-summary-item {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: #ffffff;
+        }
+
+        .metric-summary-item span {
+            display: block;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .metric-summary-item strong {
+            display: block;
+            margin-top: 6px;
+            font-size: 20px;
+            line-height: 1.2;
+        }
+
+        .monitor-chart {
+            height: 360px;
+            min-height: 360px;
+        }
+
+        .monitor-meta {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: minmax(0, 1.3fr) 360px;
+            gap: 14px;
+        }
+
+        .ops-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .ops-tile {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14px;
+            background: #ffffff;
+            min-height: 96px;
+        }
+
+        .ops-tile strong {
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .ops-tile span {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .health-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .progress {
+            height: 8px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: #e8edf1;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0;
+            background: var(--teal);
+            transition: width .25s ease;
+        }
+
+        .log-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .log-item {
+            display: grid;
+            grid-template-columns: 68px 1fr;
+            gap: 10px;
+            border-bottom: 1px solid #edf0f2;
+            padding-bottom: 10px;
+        }
+
+        .log-item:last-child {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .log-message {
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .query-layout {
+            display: grid;
+            grid-template-columns: 300px minmax(0, 1fr);
+            gap: 14px;
+        }
+
+        .instance-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 520px;
+            overflow: auto;
+        }
+
+        .instance-option {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 11px;
+            text-align: left;
+        }
+
+        .instance-option.active {
+            border-color: var(--teal);
+            background: #effafa;
+        }
+
+        .editor {
+            display: grid;
+            grid-template-rows: 220px auto;
+            gap: 12px;
+        }
+
+        .textarea {
+            width: 100%;
+            min-height: 220px;
+            resize: vertical;
+            padding: 14px;
+            line-height: 1.6;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+            font-size: 13px;
+            background: #fbfcfd;
+        }
+
+        .result-table-wrap {
+            max-height: 430px;
+            overflow: auto;
+        }
+
+        .empty {
+            padding: 28px;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-field.full {
+            grid-column: 1 / -1;
+        }
+
+        .inline-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #4d5964;
+            font-size: 13px;
+            font-weight: 650;
+        }
+
+        .save-result {
+            display: none;
+            grid-column: 1 / -1;
+            padding: 10px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+            background: #f8fafb;
+            color: var(--muted);
+            line-height: 1.45;
+        }
+
+        .save-result.show {
+            display: block;
+        }
+
+        .save-result.success {
+            border-color: #cde8d7;
+            background: #e8f5ed;
+            color: var(--green);
+        }
+
+        .save-result.error {
+            border-color: #efcac6;
+            background: #fdecea;
+            color: var(--red);
+        }
+
+        .save-result.warning {
+            border-color: #f0d4a5;
+            background: #fff3df;
+            color: var(--amber);
+        }
+
+        label {
+            color: #4d5964;
+            font-size: 12px;
+            font-weight: 650;
+        }
+
+        .modal-mask {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(20, 25, 31, 0.42);
+            z-index: 30;
+        }
+
+        .modal-mask.show {
+            display: flex;
+        }
+
+        .modal {
+            width: min(760px, calc(100vw - 48px));
+            max-height: calc(100vh - 56px);
+            overflow: auto;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 24px 80px rgba(0,0,0,.24);
+        }
+
+        .modal-header,
+        .modal-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 18px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .modal-footer {
+            border-top: 1px solid var(--line);
+            border-bottom: 0;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 17px;
+        }
+
+        .modal-body {
+            padding: 18px;
+        }
+
+        .toast {
+            position: fixed;
+            right: 22px;
+            bottom: 22px;
+            min-width: 240px;
+            max-width: 420px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            background: #20242a;
+            color: #ffffff;
+            box-shadow: var(--shadow);
+            z-index: 50;
+        }
+
+        .toast.success { background: var(--green); }
+        .toast.error { background: var(--red); }
+        .toast.warning { background: var(--amber); }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .mono {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        }
+
+        @media (max-width: 1180px) {
+            body {
+                min-width: 0;
+            }
+
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+                height: auto;
+                border-right: 0;
+                border-bottom: 1px solid var(--line);
+            }
+
+            .nav-title {
+                display: none;
+            }
+
+            .sidebar-nav {
+                display: flex;
+                gap: 8px;
+                flex: 0 0 auto;
+                overflow: auto;
+                padding-top: 12px;
+            }
+
+            .nav-item {
+                width: auto;
+                min-width: 132px;
+                min-height: 58px;
+                flex: 0 0 auto;
+            }
+
+            .nav-desc {
+                display: none;
+            }
+
+            .summary-grid,
+            .ops-grid,
+            .two-col,
+            .monitor-layout,
+            .query-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .metric-summary {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        /* ============== 慢 SQL 模块样式 ============== */
+
+        .subtabs {
+            display: flex;
+            gap: 6px;
+            border-bottom: 1px solid var(--line);
+            margin-bottom: 16px;
+        }
+
+        .subtab {
+            padding: 8px 16px;
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+        }
+
+        .subtab.active {
+            color: var(--teal);
+            border-bottom-color: var(--teal);
+        }
+
+        .filter-bar {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .filter-bar .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .filter-bar label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .filter-actions {
+            grid-column: span 6;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .badge.cdb    { background: #1e6dff; color: #fff; }
+        .badge.cynosdb { background: #6b5fb5; color: #fff; }
+        .badge.postgres { background: #2f6f8f; color: #fff; }
+
+        .sql-template {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+            font-size: 12.5px;
+            color: #2c3e50;
+            background: #f6f7f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .fp-chip {
+            font-family: monospace;
+            font-size: 11.5px;
+            color: var(--muted);
+        }
+
+        .chart-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .chart-row.full {
+            grid-template-columns: 1fr;
+        }
+
+        .chart-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14px;
+            min-height: 320px;
+        }
+
+        .chart-card h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: var(--text);
+        }
+
+        .chart-canvas {
+            width: 100%;
+            height: 280px;
+        }
+
+        .sync-status-card {
+            display: flex;
+            gap: 18px;
+            align-items: center;
+            padding: 12px 14px;
+            background: var(--surface-soft);
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            margin-bottom: 14px;
+        }
+
+        .sync-status-card .dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: var(--green);
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        .sync-status-card .dot.off { background: var(--muted); }
+        .sync-status-card .dot.err { background: var(--red); }
+
+        .kv-table th, .kv-table td {
+            padding: 6px 10px;
+            border-bottom: 1px dashed var(--line);
+            vertical-align: top;
+        }
+
+        .kv-table th {
+            width: 130px;
+            text-align: left;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 16px;
+        }
+
+        @media (max-width: 1180px) {
+            .detail-grid { grid-template-columns: 1fr; }
+        }
+
+        .code-block {
+            background: #1e272e;
+            color: #d6deeb;
+            padding: 14px;
+            border-radius: 8px;
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 12.5px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 320px;
+            overflow: auto;
+        }
+
+        .badge.warn { background: var(--amber); color: #fff; }
+        .badge.ok   { background: var(--green); color: #fff; }
+        .badge.bad  { background: var(--red); color: #fff; }
+        .badge.dim  { background: var(--muted); color: #fff; }
+
+        .binding-card {
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .binding-card .meta {
+            font-size: 12px;
+            color: var(--muted);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 14px;
+        }
+        .binding-card .actions {
+            display: flex;
+            gap: 6px;
+        }
+        .binding-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .binding-summary-item {
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 10px 12px;
+            background: #fff;
+        }
+        .binding-summary-item strong {
+            display: block;
+            font-size: 20px;
+            line-height: 1.2;
+        }
+        .binding-summary-item span {
+            color: var(--muted);
+            font-size: 12px;
+        }
+        .binding-summary-meta {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .binding-summary-actions {
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+        .binding-modal-list {
+            max-height: 360px;
+            overflow: auto;
+            padding-right: 4px;
+        }
+        @media (max-width: 760px) {
+            .binding-summary {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .binding-summary-actions {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+        .btn.danger { background: var(--red); color: #fff; border-color: var(--red); }
+        .btn.tiny { padding: 4px 10px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="brand">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
+                        <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path>
+                        <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path>
+                    </svg>
+                </span>
+                DBCheck
+            </div>
+            <div class="nav-title">运维工作区</div>
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-page="overview">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="8" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="15" width="7" height="6" rx="1.5"></rect></svg>
+                    </span>
+                    <span class="nav-text">
+                        <span class="nav-label">工作台</span>
+                        <span class="nav-desc">资产概览</span>
+                    </span>
+                </button>
+                <button class="nav-item" data-page="instances">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="6" rx="2"></rect><rect x="4" y="14" width="16" height="6" rx="2"></rect><path d="M8 7h.01"></path><path d="M8 17h.01"></path></svg>
+                    </span>
+                    <span class="nav-text">
+                        <span class="nav-label">实例资产</span>
+                        <span class="nav-desc">实例接入</span>
+                    </span>
+                </button>
+                <button class="nav-item" data-page="backups">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="7" ry="3"></ellipse><path d="M5 5v8c0 1.7 3.1 3 7 3s7-1.3 7-3V5"></path><path d="M8 19h8"></path><path d="M12 16v5"></path></svg>
+                    </span>
+                    <span class="nav-text">
+                        <span class="nav-label">备份任务</span>
+                        <span class="nav-desc">备份记录</span>
+                    </span>
+                </button>
+                <button class="nav-item" data-page="binlog">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l3 3v15H6z"></path><path d="M14 3v4h4"></path><path d="M9 11h6"></path><path d="M9 15h6"></path></svg>
+                    </span>
+                    <span class="nav-text">
+                        <span class="nav-label">归档日志</span>
+                        <span class="nav-desc">Binlog / WAL</span>
+                    </span>
+                </button>
+                <button class="nav-item" data-page="monitor">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"></path><path d="M4 19h16"></path><path d="M7 15l3-4 3 2 4-7"></path><path d="M17 6h3v3"></path></svg>
+                    </span>
+                    <span class="nav-text">
+                        <span class="nav-label">监控指标</span>
+                        <span class="nav-desc">云监控</span>
+                    </span>
+                </button>
+                <button class="nav-item" data-page="query">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="m8 10 3 2-3 2"></path><path d="M13 15h4"></path></svg>
+                    </span>
+                    <span class="nav-text">
+                        <span class="nav-label">SQL 查询</span>
+                        <span class="nav-desc">执行窗口</span>
+                    </span>
+                </button>
+                <button class="nav-item" data-page="logs">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 4h8l2 2v14H6V6z"></path><path d="M9 10h6"></path><path d="M9 14h6"></path><path d="M9 18h3"></path></svg>
+                    </span>
+                    <span class="nav-text">
+                        <span class="nav-label">检测日志</span>
+                        <span class="nav-desc">巡检结果</span>
+                    </span>
+                </button>
+                <button class="nav-item" data-page="slow-sql">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="7"></circle><path d="M9 2h6"></path><path d="M12 6V2"></path><path d="M12 10v4l3 2"></path></svg>
+                    </span>
+                    <span class="nav-text">
+                        <span class="nav-label">慢 SQL</span>
+                        <span class="nav-desc">性能分析</span>
+                    </span>
+                </button>
+            </nav>
+        </aside>
+
+        <section class="main">
+            <header class="topbar">
+                <div>
+                    <h1 id="pageTitle">工作台</h1>
+                    <div class="topbar-meta" id="lastRefresh">等待加载</div>
+                </div>
+                <div class="topbar-actions">
+                    <button class="btn" onclick="refreshAll()" title="刷新">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v6h-6"></path></svg>
+                        刷新
+                    </button>
+                    <button class="btn btn-primary" onclick="openInstanceModal()" title="新增实例">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
+                        新增实例
+                    </button>
+                </div>
+            </header>
+
+            <main class="content">
+                <section class="page active" id="page-overview">
+                    <div class="grid summary-grid">
+                        <div class="stat-card clickable" role="button" tabindex="0" onclick="openInstancesFromDashboard('')" onkeydown="handleDashboardCardKey(event, '')">
+                            <div class="stat-head">
+                                <span class="stat-label">实例总数</span>
+                                <span class="badge type">资产</span>
+                            </div>
+                            <div class="stat-value" id="metricTotal">-</div>
+                            <div class="stat-foot" id="metricEnv">环境分布加载中</div>
+                        </div>
+                        <div class="stat-card clickable" role="button" tabindex="0" onclick="openInstancesFromDashboard('online')" onkeydown="handleDashboardCardKey(event, 'online')">
+                            <div class="stat-head">
+                                <span class="stat-label">在线实例</span>
+                                <span class="badge online">健康</span>
+                            </div>
+                            <div class="stat-value" id="metricOnline">-</div>
+                            <div class="stat-foot" id="metricHealth">健康评分 -</div>
+                        </div>
+                        <div class="stat-card clickable" role="button" tabindex="0" onclick="openInstancesFromDashboard('offline')" onkeydown="handleDashboardCardKey(event, 'offline')">
+                            <div class="stat-head">
+                                <span class="stat-label">异常实例</span>
+                                <span class="badge offline">风险</span>
+                            </div>
+                            <div class="stat-value" id="metricOffline">-</div>
+                            <div class="stat-foot">检测失败或未连通</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-head">
+                                <span class="stat-label">备份任务</span>
+                                <span class="badge running">任务</span>
+                            </div>
+                            <div class="stat-value" id="metricBackups">-</div>
+                            <div class="stat-foot" id="metricBackupStatus">任务状态加载中</div>
+                        </div>
+                    </div>
+
+                    <div class="two-col">
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">运维概览</div>
+                                    <div class="panel-subtitle">按资产、变更、查询、备份四类工作组织</div>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="ops-grid">
+                                    <div class="ops-tile">
+                                        <strong>连接资产</strong>
+                                        <span>统一维护实例、环境、负责人、账号和数据库名，支持连通检测。</span>
+                                    </div>
+                                    <div class="ops-tile">
+                                        <strong>安全查询</strong>
+                                        <span>查询台只放行只读语句，默认自动追加返回条数限制。</span>
+                                    </div>
+                                    <div class="ops-tile">
+                                        <strong>备份记录</strong>
+                                        <span>任务列表持久化保存，可按状态筛选，便于追踪执行结果。</span>
+                                    </div>
+                                    <div class="ops-tile">
+                                        <strong>检测审计</strong>
+                                        <span>每次连通性检测都会写入日志，便于定位实例波动。</span>
+                                    </div>
+                                    <div class="ops-tile">
+                                        <strong>多库支持</strong>
+                                        <span>连通检测覆盖 MySQL、PostgreSQL、Redis、MongoDB、Oracle、SQL Server。</span>
+                                    </div>
+                                    <div class="ops-tile">
+                                        <strong>轻量部署</strong>
+                                        <span>后端使用 FastAPI 和 SQLite，不引入复杂运行时。</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">健康度</div>
+                                    <div class="panel-subtitle">基于最近实例状态</div>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="health-row">
+                                    <span>整体健康评分</span>
+                                    <strong id="healthScore">-</strong>
+                                </div>
+                                <div class="progress">
+                                    <div class="progress-fill" id="healthBar"></div>
+                                </div>
+                                <div style="height:16px"></div>
+                                <div class="log-list" id="recentChecks">
+                                    <div class="empty">暂无检测日志</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="page" id="page-instances">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <input id="instanceKeyword" class="input search" placeholder="搜索实例、主机或负责人">
+                            <select id="instanceStatus" class="select">
+                                <option value="">全部状态</option>
+                                <option value="online">正常</option>
+                                <option value="warning">警告</option>
+                                <option value="offline">异常</option>
+                            </select>
+                            <select id="instanceType" class="select">
+                                <option value="">全部类型</option>
+                                <option>MySQL</option>
+                                <option>PostgreSQL</option>
+                                <option>Redis</option>
+                                <option>MongoDB</option>
+                                <option>Oracle</option>
+                                <option>SQL Server</option>
+                            </select>
+                        </div>
+                        <div class="toolbar-right">
+                            <button class="btn" onclick="openDiscoveryModal('postgres')">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21h-8"></path><path d="M3 7a4 4 0 0 1 4-4h10v4"></path><path d="M7 21a4 4 0 0 1-4-4V7"></path><path d="M7 13h14"></path><path d="M17 9l4 4-4 4"></path></svg>
+                                导入 PostgreSQL
+                            </button>
+                            <button class="btn" onclick="batchCheck()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"></path></svg>
+                                批量检测
+                            </button>
+                            <button class="btn btn-primary" onclick="openInstanceModal()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
+                                新增实例
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">实例资产</div>
+                                <div class="panel-subtitle" id="instanceCount">-</div>
+                            </div>
+                        </div>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>实例</th>
+                                        <th>地址</th>
+                                        <th>类型</th>
+                                        <th>环境</th>
+                                        <th>负责人</th>
+                                        <th>版本</th>
+                                        <th>状态</th>
+                                        <th>最后检测</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="instancesTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="page" id="page-backups">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <input id="backupKeyword" class="input search" placeholder="搜索备份或实例">
+                            <select id="backupStatus" class="select">
+                                <option value="">全部状态</option>
+                                <option value="success">成功</option>
+                                <option value="running">执行中</option>
+                                <option value="pending">待执行</option>
+                                <option value="failed">失败</option>
+                            </select>
+                        </div>
+                        <div class="toolbar-right">
+                            <select id="backupInstance" class="select"></select>
+                            <select id="backupType" class="select">
+                                <option value="full">全量</option>
+                                <option value="incremental">增量</option>
+                                <option value="rdb">RDB</option>
+                                <option value="manual">手动</option>
+                                <option value="expdp">导出</option>
+                            </select>
+                            <button class="btn" onclick="syncTencentBackups()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9"></path><path d="M3 12a9 9 0 0 1 9-9"></path><path d="m3 12 3-3"></path><path d="m3 12 3 3"></path><path d="m21 12-3-3"></path><path d="m21 12-3 3"></path></svg>
+                                同步腾讯云备份
+                            </button>
+                            <button class="btn btn-primary" onclick="createBackup()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path></svg>
+                                新建备份
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">备份任务</div>
+                                <div class="panel-subtitle" id="backupCount">-</div>
+                            </div>
+                        </div>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>备份名称</th>
+                                        <th>所属实例</th>
+                                        <th>类型</th>
+                                        <th>大小</th>
+                                        <th>开始时间</th>
+                                        <th>结束时间</th>
+                                        <th>状态</th>
+                                        <th>操作人</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="backupsTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="page" id="page-binlog">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <select id="binlogBinding" class="select" aria-label="已绑定实例"></select>
+                            <input id="binlogStart" class="input" type="datetime-local" aria-label="开始时间">
+                            <input id="binlogEnd" class="input" type="datetime-local" aria-label="结束时间">
+                            <select id="binlogLimit" class="select" aria-label="返回数量">
+                                <option value="100">100 条</option>
+                                <option value="200" selected>200 条</option>
+                                <option value="500">500 条</option>
+                                <option value="1000">1000 条</option>
+                            </select>
+                        </div>
+                        <div class="toolbar-right">
+                            <button class="btn" onclick="loadBinlogBindings()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9"></path><path d="M3 12a9 9 0 0 1 9-9"></path><path d="m3 12 3-3"></path><path d="m3 12 3 3"></path><path d="m21 12-3-3"></path><path d="m21 12-3 3"></path></svg>
+                                刷新实例
+                            </button>
+                            <button class="btn btn-primary" onclick="loadBinlogs()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                                查询日志文件
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">归档日志 / WAL 日志</div>
+                                <div class="panel-subtitle" id="binlogCount">请选择已绑定实例</div>
+                            </div>
+                        </div>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>文件名</th>
+                                        <th>所属实例</th>
+                                        <th>产品 / 地域</th>
+                                        <th>大小</th>
+                                        <th>开始时间</th>
+                                        <th>结束时间</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="binlogTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="page" id="page-monitor">
+                    <div class="monitor-layout">
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">指标选择</div>
+                                    <div class="panel-subtitle" id="monitorBindingCount">请选择已绑定实例</div>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="monitor-form">
+                                    <div class="form-field">
+                                        <label for="monitorBinding">实例</label>
+                                        <select id="monitorBinding" class="select"></select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label>常用指标</label>
+                                        <div id="monitorCommonMetrics" class="metric-shortcuts"></div>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="monitorMetric">更多指标</label>
+                                        <div class="metric-picker-row">
+                                            <input id="monitorMetricKeyword" class="input" placeholder="搜索不常用指标">
+                                            <select id="monitorMetric" class="select"></select>
+                                        </div>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="monitorPeriod">统计周期</label>
+                                        <select id="monitorPeriod" class="select">
+                                            <option value="60" selected>1 分钟</option>
+                                            <option value="300">5 分钟</option>
+                                            <option value="3600">1 小时</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="monitorRange">时间范围</label>
+                                        <select id="monitorRange" class="select">
+                                            <option value="1" selected>最近 1 小时</option>
+                                            <option value="6">最近 6 小时</option>
+                                            <option value="24">最近 24 小时</option>
+                                            <option value="72">最近 3 天</option>
+                                            <option value="168">最近 7 天</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label>维度</label>
+                                        <div id="monitorDimensions" class="monitor-dimensions"></div>
+                                    </div>
+                                    <div class="actions">
+                                        <button class="btn" onclick="loadMonitorMetrics()">
+                                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9"></path><path d="M3 12a9 9 0 0 1 9-9"></path><path d="m3 12 3-3"></path><path d="m3 12 3 3"></path><path d="m21 12-3-3"></path><path d="m21 12-3 3"></path></svg>
+                                            刷新指标
+                                        </button>
+                                        <button class="btn btn-primary" onclick="loadMonitorData()">
+                                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"></path><path d="M4 19h16"></path><path d="M7 15l3-4 3 2 4-7"></path></svg>
+                                            查询
+                                        </button>
+                                    </div>
+                                    <div class="muted" id="monitorApiUsage">本月 GetMonitorData 查询 0 次，本地计数，仅作费用提醒</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title" id="monitorChartTitle">监控指标</div>
+                                    <div class="panel-subtitle" id="monitorChartSubtitle">等待查询</div>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="metric-summary">
+                                    <div class="metric-summary-item"><span>最新值</span><strong id="monitorLatest">-</strong></div>
+                                    <div class="metric-summary-item"><span>平均值</span><strong id="monitorAvg">-</strong></div>
+                                    <div class="metric-summary-item"><span>最小值</span><strong id="monitorMin">-</strong></div>
+                                    <div class="metric-summary-item"><span>最大值</span><strong id="monitorMax">-</strong></div>
+                                </div>
+                                <div id="monitorChart" class="monitor-chart"></div>
+                                <div class="monitor-meta" id="monitorMeta">-</div>
+                                <div class="table-wrap" style="margin-top:14px;">
+                                    <table>
+                                        <thead>
+                                            <tr><th>时间</th><th>值</th></tr>
+                                        </thead>
+                                        <tbody id="monitorPointsTable">
+                                            <tr><td colspan="2" class="empty">暂无数据</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="page" id="page-query">
+                    <div class="query-layout">
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">实例选择</div>
+                                    <div class="panel-subtitle">仅 MySQL / PostgreSQL 支持查询</div>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="instance-list" id="queryInstances"></div>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">SQL 查询台</div>
+                                    <div class="panel-subtitle" id="queryTarget">未选择实例</div>
+                                </div>
+                                <div class="actions">
+                                    <button class="btn" onclick="formatSQL()">格式化</button>
+                                    <button class="btn" onclick="clearSQL()">清空</button>
+                                    <button class="btn btn-primary" onclick="executeSQL()">
+                                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 3 14 9-14 9V3z"></path></svg>
+                                        执行
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="editor">
+                                    <textarea id="sqlEditor" class="textarea" spellcheck="false">SELECT 1 AS health_check;</textarea>
+                                    <div>
+                                        <div class="toolbar">
+                                            <div class="toolbar-left">
+                                                <span class="badge type" id="queryTime">耗时 -</span>
+                                                <span class="badge type" id="queryRows">返回 - 行</span>
+                                            </div>
+                                            <div class="toolbar-right">
+                                                <button class="btn" onclick="copyResult()">复制结果</button>
+                                                <button class="btn" onclick="exportResult()">导出 CSV</button>
+                                            </div>
+                                        </div>
+                                        <div class="result-table-wrap">
+                                            <table>
+                                                <thead id="resultHeader"></thead>
+                                                <tbody id="resultBody">
+                                                    <tr><td class="empty">等待执行查询</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="page" id="page-logs">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">检测日志</div>
+                                <div class="panel-subtitle" id="logCount">-</div>
+                            </div>
+                            <button class="btn" onclick="loadLogs()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v6h-6"></path></svg>
+                                刷新日志
+                            </button>
+                        </div>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>实例</th>
+                                        <th>地址</th>
+                                        <th>类型</th>
+                                        <th>结果</th>
+                                        <th>耗时</th>
+                                        <th>消息</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="logsTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ========== 慢 SQL 页面 ========== -->
+                <section class="page" id="page-slow-sql">
+                    <div class="subtabs" id="slowSqlTabs">
+                        <button class="subtab active" data-sub="list">慢查询列表</button>
+                        <button class="subtab" data-sub="stats">统计与图表</button>
+                        <button class="subtab" data-sub="detail">详情分析</button>
+                    </div>
+
+                    <!-- 顶部：凭证管理 + 绑定管理 + 同步状态 -->
+                    <div class="panel" style="margin-bottom: 14px;">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">腾讯云接入</div>
+                                <div class="panel-subtitle">录入凭证、绑定实例、查看同步状态</div>
+                            </div>
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn" onclick="openCredentialModal()">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.6 7.6a5 5 0 1 1-7 7l-2.4-2.4a5 5 0 0 1 7-7L19 8"></path></svg>
+                                    凭证管理
+                                </button>
+                                <button class="btn" onclick="openDiscoveryModal()">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21h-8"></path><path d="M3 7a4 4 0 0 1 4-4h10v4"></path><path d="M7 21a4 4 0 0 1-4-4V7"></path><path d="M7 13h14"></path><path d="M17 9l4 4-4 4"></path></svg>
+                                    自动导入实例
+                                </button>
+                                <button class="btn btn-primary" onclick="openBindingModal()">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"></path></svg>
+                                    绑定 TC 实例
+                                </button>
+                            </div>
+                        </div>
+                        <div class="sync-status-card" id="slowSyncStatus">
+                            <span><span class="dot" id="slowSyncDot"></span><span id="slowSyncText">同步器状态加载中…</span></span>
+                            <span class="muted">上次拉取：<span id="slowLastTick">-</span></span>
+                            <span class="muted">启用绑定：<span id="slowBindingsCount">-</span></span>
+                            <span class="muted">失败绑定：<span id="slowFailingCount">-</span></span>
+                            <span style="margin-left:auto;">
+                                <button class="btn tiny" onclick="triggerSlowRefresh()">立即同步</button>
+                            </span>
+                        </div>
+                        <div id="slowBindingsList"></div>
+                    </div>
+
+                    <!-- 列表视图 -->
+                    <div class="slow-subview" id="slowListView">
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">慢查询列表</div>
+                                    <div class="panel-subtitle" id="slowListCount">-</div>
+                                </div>
+                                <div style="display:flex; gap:8px;">
+                                    <button class="btn" onclick="loadSlowQueries()">刷新</button>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="filter-bar">
+                                    <div class="form-field">
+                                        <label>实例</label>
+                                        <select id="slowFilterInstance" class="select"><option value="">全部</option></select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label>TC 产品</label>
+                                        <select id="slowFilterProduct" class="select">
+                                            <option value="">全部</option>
+                                            <option value="cdb">CDB</option>
+                                            <option value="cynosdb">TDSQL-C</option>
+                                            <option value="postgres">PostgreSQL</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label>数据库</label>
+                                        <input id="slowFilterDb" class="input" placeholder="dbname">
+                                    </div>
+                                    <div class="form-field">
+                                        <label>最小执行时长 (ms)</label>
+                                        <input id="slowFilterMinMs" class="input" type="number" min="0" placeholder="100">
+                                    </div>
+                                    <div class="form-field">
+                                        <label>关键字 (SQL)</label>
+                                        <input id="slowFilterKeyword" class="input" placeholder="LIKE sql_text">
+                                    </div>
+                                    <div class="form-field">
+                                        <label>指纹</label>
+                                        <input id="slowFilterFp" class="input" placeholder="MD5 全/前 8 位">
+                                    </div>
+                                    <div class="form-field">
+                                        <label>起始日期</label>
+                                        <input id="slowFilterStart" class="input" type="date">
+                                    </div>
+                                    <div class="form-field">
+                                        <label>结束日期</label>
+                                        <input id="slowFilterEnd" class="input" type="date">
+                                    </div>
+                                    <div class="filter-actions">
+                                        <button class="btn" onclick="resetSlowFilters()">重置</button>
+                                        <button class="btn btn-primary" onclick="loadSlowQueries()">查询</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>时间</th>
+                                            <th>实例</th>
+                                            <th>数据库</th>
+                                            <th>用户@主机</th>
+                                            <th>SQL 模板</th>
+                                            <th>指纹</th>
+                                            <th>执行 ms</th>
+                                            <th>锁 ms</th>
+                                            <th>扫描行</th>
+                                            <th>返回行</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="slowQueriesTbody"></tbody>
+                                </table>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; padding:10px 14px; align-items:center;">
+                                <span class="muted" id="slowPageInfo">-</span>
+                                <div style="display:flex; gap:6px;">
+                                    <button class="btn tiny" onclick="slowPagePrev()">上一页</button>
+                                    <button class="btn tiny" onclick="slowPageNext()">下一页</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 统计视图 -->
+                    <div class="slow-subview" id="slowStatsView" style="display:none;">
+                        <div class="panel" style="margin-bottom: 14px;">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">统计概览</div>
+                                    <div class="panel-subtitle" id="slowStatsSummary">-</div>
+                                </div>
+                                <div style="display:flex; gap:8px;">
+                                    <button class="btn" onclick="loadSlowStats()">刷新</button>
+                                </div>
+                            </div>
+                            <div class="panel-body" style="display:flex; gap:18px; flex-wrap:wrap;">
+                                <div class="form-field">
+                                    <label>起始日期</label>
+                                    <input id="slowStatsStart" class="input" type="date">
+                                </div>
+                                <div class="form-field">
+                                    <label>结束日期</label>
+                                    <input id="slowStatsEnd" class="input" type="date">
+                                </div>
+                                <div class="form-field">
+                                    <label>&nbsp;</label>
+                                    <button class="btn btn-primary" onclick="loadSlowStats()">应用</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chart-row">
+                            <div class="chart-card">
+                                <h4>Top 10 慢查询（按平均执行时间）</h4>
+                                <div id="slowChartTop" class="chart-canvas"></div>
+                            </div>
+                            <div class="chart-card">
+                                <h4>数据库分布</h4>
+                                <div id="slowChartDb" class="chart-canvas"></div>
+                            </div>
+                        </div>
+                        <div class="chart-row full" style="margin-top:14px;">
+                            <div class="chart-card">
+                                <h4>时序趋势（按小时）</h4>
+                                <div id="slowChartTime" class="chart-canvas"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 详情视图 -->
+                    <div class="slow-subview" id="slowDetailView" style="display:none;">
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">慢查询详情</div>
+                                    <div class="panel-subtitle" id="slowDetailSubtitle">点击列表中某行查看详情</div>
+                                </div>
+                                <div style="display:flex; gap:8px;">
+                                    <button class="btn" onclick="copySqlTemplate()">复制 SQL 模板</button>
+                                    <button class="btn btn-primary" onclick="explainCurrentSlow()">执行 EXPLAIN</button>
+                                </div>
+                            </div>
+                            <div id="slowDetailBody">
+                                <p class="muted" style="padding: 30px; text-align:center;">尚未选择慢查询</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </section>
+    </div>
+
+    <div class="modal-mask" id="instanceModal">
+        <form class="modal" id="instanceForm">
+            <div class="modal-header">
+                <h3 id="instanceModalTitle">新增实例</h3>
+                <button type="button" class="btn icon-btn" onclick="closeInstanceModal()" title="关闭">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="formId">
+                <div class="form-grid">
+                    <div class="form-field full">
+                        <label for="formName">实例名称</label>
+                        <input class="input" id="formName" required placeholder="生产-MySQL-主库">
+                    </div>
+                    <div class="form-field">
+                        <label for="formHost">主机地址</label>
+                        <input class="input" id="formHost" required placeholder="192.168.1.10">
+                    </div>
+                    <div class="form-field">
+                        <label for="formPort">端口</label>
+                        <input class="input" id="formPort" type="number" required placeholder="3306">
+                    </div>
+                    <div class="form-field">
+                        <label for="formType">数据库类型</label>
+                        <select class="select" id="formType" required>
+                            <option>MySQL</option>
+                            <option>PostgreSQL</option>
+                            <option>Redis</option>
+                            <option>MongoDB</option>
+                            <option>Oracle</option>
+                            <option>SQL Server</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="formEnv">环境</label>
+                        <select class="select" id="formEnv">
+                            <option value="prod">生产</option>
+                            <option value="staging">预发</option>
+                            <option value="test">测试</option>
+                            <option value="dev">开发</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="formUsername">用户名</label>
+                        <input class="input" id="formUsername" placeholder="root / postgres / sa">
+                    </div>
+                    <div class="form-field">
+                        <label for="formPassword">密码</label>
+                        <input class="input" id="formPassword" type="password" placeholder="留空则不修改">
+                    </div>
+                    <div class="form-field">
+                        <label for="formDatabase">数据库名 / 服务名</label>
+                        <input class="input" id="formDatabase" placeholder="app / postgres / ORCL / 0">
+                    </div>
+                    <div class="form-field">
+                        <label for="formVersion">版本</label>
+                        <input class="input" id="formVersion" placeholder="8.0.32">
+                    </div>
+                    <div class="form-field">
+                        <label for="formOwner">负责人</label>
+                        <input class="input" id="formOwner" placeholder="DBA">
+                    </div>
+                    <div class="form-field full">
+                        <label for="formRemark">备注</label>
+                        <input class="input" id="formRemark" placeholder="核心业务主库、只读报表库等">
+                    </div>
+                    <div class="form-field full">
+                        <label class="inline-check">
+                            <input type="checkbox" id="testAfterSave" checked>
+                            保存后立即测试连接
+                        </label>
+                    </div>
+                    <div class="save-result" id="saveConnectionResult"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="closeInstanceModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ========== 慢 SQL 模块 Modals ========== -->
+
+    <!-- 凭证管理 Modal -->
+    <div class="modal-mask" id="credentialModal">
+        <form class="modal" id="credentialForm" style="width: min(640px, calc(100vw - 48px));">
+            <div class="modal-header">
+                <h3 id="credentialModalTitle">新增腾讯云凭证</h3>
+                <button type="button" class="btn icon-btn" onclick="closeCredentialModal()" title="关闭">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="credFormId">
+                <div class="form-grid">
+                    <div class="form-field full">
+                        <label for="credFormName">凭证名称</label>
+                        <input class="input" id="credFormName" required placeholder="prod-account">
+                    </div>
+                    <div class="form-field full">
+                        <label for="credFormSecretId">SecretId</label>
+                        <input class="input" id="credFormSecretId" required placeholder="AKID...">
+                    </div>
+                    <div class="form-field full">
+                        <label for="credFormSecretKey">SecretKey</label>
+                        <input class="input" id="credFormSecretKey" type="password" placeholder="编辑时留空则保留原值">
+                    </div>
+                    <div class="form-field">
+                        <label for="credFormEndpoint">API 域名后缀</label>
+                        <input class="input" id="credFormEndpoint" value="tencentcloudapi.com">
+                    </div>
+                    <div class="form-field">
+                        <label for="credFormDefault" style="display:flex; align-items:center; gap:8px; padding-top:18px;">
+                            <input type="checkbox" id="credFormDefault"> 设为默认凭证
+                        </label>
+                    </div>
+                </div>
+                <hr style="border:0; border-top:1px solid var(--line); margin: 14px 0;">
+                <div class="panel-title" style="font-size:13px; margin-bottom:8px;">已保存凭证</div>
+                <div id="credentialList"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="closeCredentialModal()">关闭</button>
+                <button type="submit" class="btn btn-primary">保存凭证</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 绑定管理 Modal -->
+    <div class="modal-mask" id="bindingModal">
+        <form class="modal" id="bindingForm" style="width: min(640px, calc(100vw - 48px));">
+            <div class="modal-header">
+                <h3 id="bindingModalTitle">新增 TC 绑定</h3>
+                <button type="button" class="btn icon-btn" onclick="closeBindingModal()" title="关闭">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="bindFormId">
+                <div class="form-grid">
+                    <div class="form-field">
+                        <label for="bindFormInstance">dbcheck 实例</label>
+                        <select class="select" id="bindFormInstance" required></select>
+                    </div>
+                    <div class="form-field">
+                        <label for="bindFormProduct">TC 产品</label>
+                        <select class="select" id="bindFormProduct" required>
+                            <option value="cdb">CDB (云数据库 MySQL)</option>
+                            <option value="cynosdb">TDSQL-C (CynosDB)</option>
+                            <option value="postgres">PostgreSQL (云数据库 PostgreSQL)</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="bindFormRegion">地域</label>
+                        <input class="input" id="bindFormRegion" required placeholder="ap-guangzhou / ap-shanghai">
+                    </div>
+                    <div class="form-field">
+                        <label for="bindFormInstanceId">TC 实例 ID</label>
+                        <input class="input" id="bindFormInstanceId" required placeholder="cdb-xxxxxx / cynosdbmysql-ins-xxx / postgres-xxxxxx">
+                    </div>
+                    <div class="form-field full">
+                        <label for="bindFormCredential">凭证</label>
+                        <select class="select" id="bindFormCredential" required></select>
+                    </div>
+                    <div class="form-field">
+                        <label for="bindFormEnabled" style="display:flex; align-items:center; gap:8px;">
+                            <input type="checkbox" id="bindFormEnabled" checked> 启用调度
+                        </label>
+                    </div>
+                </div>
+                <hr style="border:0; border-top:1px solid var(--line); margin: 14px 0;">
+                <div class="panel-title" style="font-size:13px; margin-bottom:8px;">现有绑定</div>
+                <div id="bindingList" class="binding-modal-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="closeBindingModal()">关闭</button>
+                <button type="submit" class="btn btn-primary">保存绑定</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 自动发现 / 导入腾讯云实例 Modal -->
+    <div class="modal-mask" id="discoveryModal">
+        <div class="modal" style="width: min(860px, calc(100vw - 48px));">
+            <div class="modal-header">
+                <h3>自动导入腾讯云实例</h3>
+                <button type="button" class="btn icon-btn" onclick="closeDiscoveryModal()" title="关闭">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-field">
+                        <label for="discoveryCredential">凭证</label>
+                        <select class="select" id="discoveryCredential"></select>
+                    </div>
+                    <div class="form-field full">
+                        <label for="discoveryRegions">地域</label>
+                        <input class="input" id="discoveryRegions" placeholder="ap-guangzhou, ap-shanghai, ap-singapore">
+                    </div>
+                    <div class="form-field">
+                        <label style="display:flex; align-items:center; gap:8px; padding-top:18px;">
+                            <input type="checkbox" id="discoveryProductCdb" checked> CDB
+                        </label>
+                    </div>
+                    <div class="form-field">
+                        <label style="display:flex; align-items:center; gap:8px; padding-top:18px;">
+                            <input type="checkbox" id="discoveryProductCynosdb" checked> TDSQL-C
+                        </label>
+                    </div>
+                    <div class="form-field">
+                        <label style="display:flex; align-items:center; gap:8px; padding-top:18px;">
+                            <input type="checkbox" id="discoveryProductPostgres" checked> PostgreSQL
+                        </label>
+                    </div>
+                    <div class="form-field">
+                        <label style="display:flex; align-items:center; gap:8px;">
+                            <input type="checkbox" id="discoveryCreateMissing" checked> 自动创建本地实例
+                        </label>
+                    </div>
+                    <div class="form-field">
+                        <label style="display:flex; align-items:center; gap:8px;">
+                            <input type="checkbox" id="discoveryEnabled" checked> 导入后启用调度
+                        </label>
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px; margin: 12px 0;">
+                    <button type="button" class="btn" onclick="discoverTCInstances()">扫描预览</button>
+                    <button type="button" class="btn btn-primary" onclick="importTCInstances()">导入并绑定</button>
+                </div>
+                <div id="discoveryResult">
+                    <p class="muted">选择凭证和地域后扫描，系统会从腾讯云拉取 CDB / TDSQL-C / PostgreSQL 实例。</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="closeDiscoveryModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        const BACKUP_AUTO_SYNC_MS = 60000;
+        const BACKUP_CREATE_POLL_MS = 30000;
+        const BACKUP_CREATE_POLL_MAX = 20;
+        const MONITOR_USAGE_STORAGE_KEY = 'dbcheck.monitor.getMonitorDataUsage';
+        const MONITOR_COMMON_METRIC_RULES = [
+            { label: 'CPU', keywords: ['cpu', 'cpuuse', 'cpuusage', 'cpu利用率', 'cpu使用率', '处理器'] },
+            { label: '内存', keywords: ['memory', 'mem', 'memusage', '内存'] },
+            { label: '磁盘', keywords: ['disk', 'volume', 'storage', 'space', '容量', '磁盘', '空间'] },
+            { label: '连接数', keywords: ['connections', 'connection', 'conn', 'threadsconnected', 'threadconnected', '连接', '会话', '线程'] },
+            { label: 'QPS', keywords: ['qps', 'queriespersecond', 'queryrate', '每秒查询', '每秒请求', '请求数', '查询数'] },
+            { label: 'TPS', keywords: ['tps', 'transactions', 'transaction', '每秒事务', '事务'] },
+            { label: '慢查询', keywords: ['slowqueries', 'slowquery', 'slow', '慢查询', '慢sql'] },
+            { label: 'IOPS', keywords: ['iops', 'readiops', 'writeiops', '每秒读写', '读写次数'] },
+        ];
+        const state = {
+            page: 'overview',
+            dashboard: null,
+            instances: [],
+            backups: [],
+            backupSyncing: false,
+            backupAutoSyncTimer: null,
+            backupPollTimers: {},
+            binlogBindings: [],
+            binlogs: [],
+            binlogMeta: null,
+            selectedBinlogBindingId: null,
+            monitorBindings: [],
+            monitorMetrics: [],
+            monitorSelectedMetricName: null,
+            monitorApiUsage: null,
+            monitorMetricData: null,
+            monitorChart: null,
+            logs: [],
+            selectedInstanceId: null,
+            result: null,
+            // ===== 慢 SQL 模块状态 =====
+            slowSubPage: 'list',
+            slowCredentials: [],
+            slowBindings: [],
+            tcDiscoveryItems: [],
+            slowFilters: { page: 1, pageSize: 20 },
+            slowQueries: [],
+            slowDetail: null,
+            slowStats: null,
+            slowTimeChart: null,
+            slowTopChart: null,
+            slowDbChart: null,
+        };
+
+        const labels = {
+            online: '正常',
+            warning: '警告',
+            offline: '异常',
+            success: '成功',
+            failed: '失败',
+            running: '执行中',
+            pending: '待执行',
+            prod: '生产',
+            staging: '预发',
+            test: '测试',
+            dev: '开发',
+            full: '全量',
+            incremental: '增量',
+            differential: '差异',
+            snapshot: '快照',
+            logical: '逻辑',
+            physical: '物理',
+            rdb: 'RDB',
+            manual: '手动',
+            expdp: '导出'
+        };
+
+        function iconButton(label, iconPath, onClick, extraClass = '') {
+            return `<button class="btn icon-btn ${extraClass}" onclick="${onClick}" title="${label}" aria-label="${label}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${iconPath}</svg>
+            </button>`;
+        }
+
+        async function api(path, options = {}) {
+            const response = await fetch(`${API_BASE}${path}`, {
+                headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+                ...options
+            });
+            const data = await response.json();
+            if (!response.ok || (data.code && data.code >= 400)) {
+                throw new Error(data.detail || data.message || '请求失败');
+            }
+            return data;
+        }
+
+        function escapeHtml(value) {
+            if (value === null || value === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(value);
+            return div.innerHTML;
+        }
+
+        function escapeAttr(value) {
+            return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function labelOf(value) {
+            return labels[value] || value || '-';
+        }
+
+        function productLabel(value) {
+            return ({
+                cdb: 'CDB',
+                cynosdb: 'TDSQL-C',
+                postgres: 'PostgreSQL'
+            })[value] || value || '-';
+        }
+
+        function badge(value, text) {
+            return `<span class="badge ${value}">${escapeHtml(text || labelOf(value))}</span>`;
+        }
+
+        function toast(message, type = 'info') {
+            const node = document.createElement('div');
+            node.className = `toast ${type}`;
+            node.textContent = message;
+            document.body.appendChild(node);
+            setTimeout(() => node.remove(), 3200);
+        }
+
+        function currentUsageMonth() {
+            return new Date().toISOString().slice(0, 7);
+        }
+
+        function loadMonitorApiUsage() {
+            const month = currentUsageMonth();
+            try {
+                const raw = localStorage.getItem(MONITOR_USAGE_STORAGE_KEY);
+                const parsed = raw ? JSON.parse(raw) : null;
+                if (parsed?.month === month && Number.isFinite(Number(parsed.count))) {
+                    return { month, count: Number(parsed.count) };
+                }
+            } catch (error) {
+                console.warn('monitor usage storage read failed', error);
+            }
+            return { month, count: 0 };
+        }
+
+        function saveMonitorApiUsage(usage) {
+            try {
+                localStorage.setItem(MONITOR_USAGE_STORAGE_KEY, JSON.stringify(usage));
+            } catch (error) {
+                console.warn('monitor usage storage write failed', error);
+            }
+        }
+
+        function monitorApiUsage() {
+            const month = currentUsageMonth();
+            if (!state.monitorApiUsage || state.monitorApiUsage.month !== month) {
+                state.monitorApiUsage = loadMonitorApiUsage();
+            }
+            return state.monitorApiUsage;
+        }
+
+        function incrementMonitorApiUsage() {
+            const usage = monitorApiUsage();
+            usage.count += 1;
+            saveMonitorApiUsage(usage);
+            renderMonitorUsage();
+            return usage;
+        }
+
+        function renderMonitorUsage() {
+            const target = document.getElementById('monitorApiUsage');
+            if (!target) return;
+            const usage = monitorApiUsage();
+            target.textContent = `本月 GetMonitorData 查询 ${usage.count} 次，本地计数，仅作费用提醒`;
+        }
+
+        function buildInstanceCheckPath(id, password = '') {
+            const params = new URLSearchParams();
+            if (password) params.set('password', password);
+            const query = params.toString();
+            return `/api/instances/${id}/check${query ? '?' + query : ''}`;
+        }
+
+        function setSaveConnectionResult(type, message) {
+            const result = document.getElementById('saveConnectionResult');
+            if (!result) return;
+            result.className = `save-result show ${type || ''}`.trim();
+            result.textContent = message;
+        }
+
+        function updateRefreshText() {
+            document.getElementById('lastRefresh').textContent = `最后刷新 ${new Date().toLocaleString()}`;
+        }
+
+        async function refreshAll() {
+            try {
+                await Promise.all([loadDashboard(), loadInstances(), loadBackups(), loadLogs()]);
+                updateRefreshText();
+                renderCurrentPage();
+            } catch (error) {
+                toast(`加载失败：${error.message}`, 'error');
+            }
+        }
+
+        async function loadDashboard() {
+            const data = await api('/api/dashboard');
+            state.dashboard = data.data;
+            renderDashboard();
+        }
+
+        async function loadInstances() {
+            const params = new URLSearchParams();
+            const keyword = document.getElementById('instanceKeyword')?.value.trim();
+            const status = document.getElementById('instanceStatus')?.value;
+            const dbType = document.getElementById('instanceType')?.value;
+            if (keyword) params.set('keyword', keyword);
+            if (status) params.set('status', status);
+            if (dbType) params.set('db_type', dbType);
+            const data = await api(`/api/instances${params.toString() ? '?' + params.toString() : ''}`);
+            state.instances = data.data.items || [];
+            renderInstances();
+            renderQueryInstances();
+            renderBackupInstanceOptions();
+        }
+
+        async function loadBackups() {
+            const params = new URLSearchParams();
+            const keyword = document.getElementById('backupKeyword')?.value.trim();
+            const status = document.getElementById('backupStatus')?.value;
+            if (keyword) params.set('keyword', keyword);
+            if (status) params.set('status', status);
+            const data = await api(`/api/backups${params.toString() ? '?' + params.toString() : ''}`);
+            state.backups = data.data.items || [];
+            renderBackups();
+        }
+
+        function hasRunningTencentBackups(instanceId = null) {
+            return state.backups.some(item => {
+                const sameInstance = instanceId === null || Number(item.instance_id) === Number(instanceId);
+                return sameInstance
+                    && item.cloud_provider === 'tencent'
+                    && ['running', 'pending'].includes(item.status);
+            });
+        }
+
+        function startBackupAutoSync() {
+            if (state.backupAutoSyncTimer) return;
+            state.backupAutoSyncTimer = setInterval(() => {
+                if (state.page !== 'backups') return;
+                if (!hasRunningTencentBackups()) return;
+                syncTencentBackups({ silent: true }).catch(error => {
+                    console.warn('backup auto sync failed', error);
+                });
+            }, BACKUP_AUTO_SYNC_MS);
+        }
+
+        function stopBackupAutoSync() {
+            if (!state.backupAutoSyncTimer) return;
+            clearInterval(state.backupAutoSyncTimer);
+            state.backupAutoSyncTimer = null;
+        }
+
+        function startBackupCreatePolling(instanceId) {
+            const key = String(instanceId);
+            if (state.backupPollTimers[key]) {
+                clearInterval(state.backupPollTimers[key]);
+            }
+
+            let attempts = 0;
+            const poll = async () => {
+                attempts += 1;
+                try {
+                    await syncTencentBackups({ silent: true, instanceId });
+                } catch (error) {
+                    console.warn('backup create poll failed', error);
+                }
+
+                if (!hasRunningTencentBackups(instanceId) || attempts >= BACKUP_CREATE_POLL_MAX) {
+                    clearInterval(state.backupPollTimers[key]);
+                    delete state.backupPollTimers[key];
+                }
+            };
+
+            state.backupPollTimers[key] = setInterval(poll, BACKUP_CREATE_POLL_MS);
+            setTimeout(poll, 5000);
+        }
+
+        async function loadMonitorBindings() {
+            const data = await api('/api/monitor/bindings');
+            state.monitorBindings = data.data.items || [];
+            renderMonitorBindingOptions();
+            if (state.monitorBindings.length) {
+                await loadMonitorMetrics();
+            } else {
+                state.monitorMetrics = [];
+                state.monitorSelectedMetricName = null;
+                renderMonitorPage();
+            }
+        }
+
+        function renderMonitorBindingOptions() {
+            const select = document.getElementById('monitorBinding');
+            if (!select) return;
+            const current = select.value;
+            select.innerHTML = state.monitorBindings.length
+                ? state.monitorBindings.map(item => `
+                    <option value="${item.id}">
+                        ${escapeHtml(item.instance_name || item.tc_instance_id)} · ${escapeHtml(item.product_label || productLabel(item.tc_product))} · ${escapeHtml(item.tc_region)}
+                    </option>
+                `).join('')
+                : '<option value="">暂无可监控的腾讯云绑定实例</option>';
+            if (current && state.monitorBindings.some(item => String(item.id) === current)) {
+                select.value = current;
+            }
+        }
+
+        async function loadMonitorMetrics() {
+            const bindingId = document.getElementById('monitorBinding')?.value;
+            if (!bindingId) return;
+            const data = await api(`/api/monitor/metrics?binding_id=${encodeURIComponent(bindingId)}`);
+            state.monitorMetrics = data.data.items || [];
+            ensureMonitorMetricSelection();
+            renderMonitorCommonMetrics();
+            renderMonitorMetricOptions();
+            renderMonitorDimensions();
+            renderMonitorUsage();
+        }
+
+        function monitorMetricSearchText(item) {
+            return [item.metric_name, item.metric_cname, item.metric_ename, item.unit_cname]
+                .filter(Boolean)
+                .map(text => String(text).toLowerCase())
+                .join(' ');
+        }
+
+        function monitorMetricLabel(item) {
+            return item.metric_cname || item.metric_name || '-';
+        }
+
+        function monitorMetricOptionText(item) {
+            return `${monitorMetricLabel(item)} · ${item.metric_name}${item.unit_cname ? ` · ${item.unit_cname}` : ''}`;
+        }
+
+        function monitorRuleScore(item, rule) {
+            const text = monitorMetricSearchText(item);
+            const name = String(item.metric_name || '').toLowerCase();
+            let score = item.query_ready ? 1000 : 0;
+            rule.keywords.forEach(keyword => {
+                const key = String(keyword).toLowerCase();
+                if (name === key) score += 120;
+                else if (name.startsWith(key)) score += 90;
+                else if (name.includes(key)) score += 70;
+                else if (text.includes(key)) score += 40;
+            });
+            return score === (item.query_ready ? 1000 : 0) ? 0 : score;
+        }
+
+        function monitorCommonMetrics() {
+            const picked = [];
+            const used = new Set();
+            MONITOR_COMMON_METRIC_RULES.forEach(rule => {
+                const candidates = state.monitorMetrics
+                    .filter(item => !used.has(item.metric_name))
+                    .map(item => ({ item, score: monitorRuleScore(item, rule) }))
+                    .filter(row => row.score > 0)
+                    .sort((a, b) => {
+                        if (b.score !== a.score) return b.score - a.score;
+                        return monitorMetricLabel(a.item).localeCompare(monitorMetricLabel(b.item), 'zh-CN');
+                    });
+                if (candidates[0]) {
+                    used.add(candidates[0].item.metric_name);
+                    picked.push({ ...candidates[0].item, shortcut_label: rule.label });
+                }
+            });
+            return picked;
+        }
+
+        function ensureMonitorMetricSelection() {
+            if (!state.monitorMetrics.length) {
+                state.monitorSelectedMetricName = null;
+                return;
+            }
+            if (
+                state.monitorSelectedMetricName
+                && state.monitorMetrics.some(item => item.metric_name === state.monitorSelectedMetricName)
+            ) {
+                return;
+            }
+            const common = monitorCommonMetrics();
+            state.monitorSelectedMetricName = common[0]?.metric_name || state.monitorMetrics[0].metric_name;
+        }
+
+        function selectMonitorMetric(metricName) {
+            if (!metricName) return;
+            state.monitorSelectedMetricName = metricName;
+            renderMonitorCommonMetrics();
+            renderMonitorMetricOptions();
+            renderMonitorDimensions();
+        }
+
+        function currentMonitorMetric() {
+            const metricName = state.monitorSelectedMetricName;
+            return state.monitorMetrics.find(item => item.metric_name === metricName) || null;
+        }
+
+        function renderMonitorCommonMetrics() {
+            const box = document.getElementById('monitorCommonMetrics');
+            if (!box) return;
+            if (!state.monitorMetrics.length) {
+                box.innerHTML = '<div class="muted">暂无指标</div>';
+                return;
+            }
+            const current = state.monitorSelectedMetricName;
+            const common = monitorCommonMetrics();
+            if (!common.length) {
+                box.innerHTML = '<div class="muted">当前实例未返回可识别的常用指标</div>';
+                return;
+            }
+            box.innerHTML = common.map(item => {
+                const active = item.metric_name === current ? ' active' : '';
+                const onclick = escapeAttr(`selectMonitorMetric(${JSON.stringify(item.metric_name)})`);
+                return `
+                    <button type="button" class="metric-chip${active}" onclick="${onclick}" title="${escapeAttr(monitorMetricOptionText(item))}">
+                        <strong>${escapeHtml(item.shortcut_label)}</strong>
+                        <span>${escapeHtml(monitorMetricLabel(item))}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function renderMonitorMetricOptions() {
+            const select = document.getElementById('monitorMetric');
+            if (!select) return;
+            const keyword = (document.getElementById('monitorMetricKeyword')?.value || '').trim().toLowerCase();
+            const current = state.monitorSelectedMetricName;
+            const commonNames = new Set(monitorCommonMetrics().map(item => item.metric_name));
+            const metrics = state.monitorMetrics.filter(item => {
+                if (commonNames.has(item.metric_name)) return false;
+                if (!keyword) return true;
+                return monitorMetricSearchText(item).includes(keyword);
+            });
+            select.innerHTML = '<option value="">选择其他指标</option>' + (
+                metrics.length
+                    ? metrics.map(item => `
+                    <option value="${escapeAttr(item.metric_name)}">
+                        ${escapeHtml(monitorMetricOptionText(item))}
+                    </option>
+                `).join('')
+                    : '<option value="" disabled>没有匹配的更多指标</option>'
+            );
+            if (current && metrics.some(item => item.metric_name === current)) {
+                select.value = current;
+            } else {
+                select.value = '';
+            }
+        }
+
+        function renderMonitorDimensions() {
+            const box = document.getElementById('monitorDimensions');
+            if (!box) return;
+            const metric = currentMonitorMetric();
+            const dims = metric?.query_dimensions || {};
+            const names = Object.keys(dims);
+            if (!metric) {
+                box.innerHTML = '<div class="muted">请选择指标</div>';
+                return;
+            }
+            document.getElementById('monitorChartTitle').textContent = metric.metric_cname || metric.metric_name;
+            document.getElementById('monitorChartSubtitle').textContent = `${metric.metric_name} · ${metric.unit_cname || metric.unit || '-'}`;
+            box.innerHTML = names.length ? names.map(name => `
+                <div class="form-field">
+                    <label>${escapeHtml(name)}</label>
+                    <input class="input monitor-dim" data-name="${escapeAttr(name)}" value="${escapeAttr(dims[name] || '')}" placeholder="维度值">
+                </div>
+            `).join('') : '<div class="muted">该指标未返回维度描述，已使用实例默认维度查询</div>';
+        }
+
+        function renderMonitorPage() {
+            if (state.page !== 'monitor') return;
+            renderMonitorBindingOptions();
+            document.getElementById('monitorBindingCount').textContent = state.monitorBindings.length
+                ? `共 ${state.monitorBindings.length} 个可监控绑定`
+                : '暂无可监控的腾讯云绑定实例';
+            ensureMonitorMetricSelection();
+            renderMonitorCommonMetrics();
+            renderMonitorMetricOptions();
+            renderMonitorDimensions();
+        }
+
+        function monitorDimensionPayload() {
+            const out = {};
+            document.querySelectorAll('.monitor-dim').forEach(input => {
+                const name = input.dataset.name;
+                if (name) out[name] = input.value.trim();
+            });
+            return out;
+        }
+
+        function formatMetricValue(value, unit) {
+            if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+            const rounded = Math.round(Number(value) * 10000) / 10000;
+            return `${rounded}${unit ? ` ${unit}` : ''}`;
+        }
+
+        async function loadMonitorData() {
+            const bindingId = document.getElementById('monitorBinding')?.value;
+            const metricName = state.monitorSelectedMetricName;
+            if (!bindingId || !metricName) {
+                toast('请选择实例和指标', 'warning');
+                return;
+            }
+            try {
+                toast('正在查询监控指标...', 'info');
+                const result = await api('/api/monitor/data', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        binding_id: Number(bindingId),
+                        metric_name: metricName,
+                        period: Number(document.getElementById('monitorPeriod')?.value || 60),
+                        range_hours: Number(document.getElementById('monitorRange')?.value || 1),
+                        dimensions: monitorDimensionPayload()
+                    })
+                });
+                const usage = incrementMonitorApiUsage();
+                state.monitorMetricData = result.data;
+                renderMonitorData();
+                toast(`指标查询完成，本月已查 ${usage.count} 次`, 'success');
+            } catch (error) {
+                toast(`指标查询失败：${error.message}`, 'error');
+            }
+        }
+
+        function renderMonitorData() {
+            const data = state.monitorMetricData;
+            const metric = data?.metric || {};
+            const series = data?.series?.[0] || null;
+            const unit = metric.unit_cname || metric.unit || '';
+            document.getElementById('monitorLatest').textContent = formatMetricValue(series?.latest, unit);
+            document.getElementById('monitorAvg').textContent = formatMetricValue(series?.avg, unit);
+            document.getElementById('monitorMin').textContent = formatMetricValue(series?.min, unit);
+            document.getElementById('monitorMax').textContent = formatMetricValue(series?.max, unit);
+            document.getElementById('monitorChartTitle').textContent = metric.metric_cname || metric.metric_name || '监控指标';
+            document.getElementById('monitorChartSubtitle').textContent = `${metric.metric_name || '-'} · ${unit || '-'}`;
+            document.getElementById('monitorMeta').textContent = data
+                ? `${data.namespace} · 周期 ${data.period}s · ${data.start_time} 至 ${data.end_time}`
+                : '-';
+
+            const rows = (series?.points || []).slice(-20).reverse();
+            document.getElementById('monitorPointsTable').innerHTML = rows.length
+                ? rows.map(row => `<tr><td>${escapeHtml(row.ts_iso)}</td><td>${escapeHtml(formatMetricValue(row.value, unit))}</td></tr>`).join('')
+                : '<tr><td colspan="2" class="empty">暂无数据</td></tr>';
+
+            const chartEl = document.getElementById('monitorChart');
+            if (!window.echarts) {
+                chartEl.textContent = 'ECharts 未加载';
+                return;
+            }
+            if (state.monitorChart) state.monitorChart.dispose();
+            state.monitorChart = echarts.init(chartEl);
+            const points = series?.points || [];
+            state.monitorChart.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { left: 58, right: 24, top: 24, bottom: 52 },
+                xAxis: {
+                    type: 'category',
+                    data: points.map(p => p.ts_iso),
+                    axisLabel: { rotate: 30, fontSize: 10 }
+                },
+                yAxis: { type: 'value', name: unit || undefined },
+                series: [{
+                    name: metric.metric_cname || metric.metric_name,
+                    type: 'line',
+                    smooth: true,
+                    showSymbol: false,
+                    data: points.map(p => p.value),
+                    lineStyle: { color: '#0f8f8c', width: 2 },
+                    areaStyle: { color: 'rgba(15, 143, 140, 0.12)' }
+                }]
+            });
+        }
+
+        async function loadLogs() {
+            const data = await api('/api/check-logs?limit=50');
+            state.logs = data.data.items || [];
+            renderLogs();
+        }
+
+        function renderDashboard() {
+            if (!state.dashboard) return;
+            const inst = state.dashboard.instances || {};
+            const statuses = inst.status || {};
+            const backups = state.dashboard.backups || {};
+            const backupStatuses = backups.status || {};
+
+            document.getElementById('metricTotal').textContent = inst.total ?? 0;
+            document.getElementById('metricOnline').textContent = statuses.online ?? 0;
+            document.getElementById('metricOffline').textContent = statuses.offline ?? 0;
+            document.getElementById('metricBackups').textContent = backups.total ?? 0;
+            document.getElementById('metricHealth').textContent = `健康评分 ${inst.health_score ?? 0}%`;
+            document.getElementById('healthScore').textContent = `${inst.health_score ?? 0}%`;
+            document.getElementById('healthBar').style.width = `${inst.health_score ?? 0}%`;
+
+            const envText = Object.entries(inst.environments || {})
+                .map(([key, val]) => `${labelOf(key)} ${val}`)
+                .join(' / ') || '无环境数据';
+            document.getElementById('metricEnv').textContent = envText;
+            document.getElementById('metricBackupStatus').textContent =
+                `成功 ${backupStatuses.success || 0} / 执行中 ${(backupStatuses.running || 0) + (backupStatuses.pending || 0)} / 失败 ${backupStatuses.failed || 0}`;
+
+            const recent = state.dashboard.recent_checks || [];
+            document.getElementById('recentChecks').innerHTML = recent.length ? recent.map(log => `
+                <div class="log-item">
+                    <div>${log.success ? badge('success', '成功') : badge('failed', '失败')}</div>
+                    <div>
+                        <div class="cell-main">${escapeHtml(log.instance_name || '快速检测')}</div>
+                        <div class="log-message">${escapeHtml(log.message)} · ${escapeHtml(log.checked_at)}</div>
+                    </div>
+                </div>
+            `).join('') : '<div class="empty">暂无检测日志</div>';
+        }
+
+        function renderInstances() {
+            const tbody = document.getElementById('instancesTable');
+            if (!tbody) return;
+            document.getElementById('instanceCount').textContent = `共 ${state.instances.length} 个实例`;
+            tbody.innerHTML = state.instances.length ? state.instances.map(inst => `
+                <tr>
+                    <td>
+                        <div class="cell-main">${escapeHtml(inst.name)}</div>
+                        <div class="cell-sub">${escapeHtml(inst.database || '默认库')}</div>
+                    </td>
+                    <td class="mono">${escapeHtml(inst.host)}:${escapeHtml(inst.port)}</td>
+                    <td>${badge('type', inst.db_type)}</td>
+                    <td>${escapeHtml(labelOf(inst.environment))}</td>
+                    <td>${escapeHtml(inst.owner || '-')}</td>
+                    <td>${escapeHtml(inst.version || '-')}</td>
+                    <td>${badge(inst.status, labelOf(inst.status))}</td>
+                    <td>${escapeHtml(inst.last_check || '-')}</td>
+                    <td>
+                        <div class="actions">
+                            ${iconButton('检测', '<path d="M20 6 9 17l-5-5"></path>', `checkInstance(${inst.id})`)}
+                            ${iconButton('编辑', '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>', `editInstance(${inst.id})`)}
+                            ${iconButton('删除', '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path>', `deleteInstance(${inst.id})`, 'btn-danger')}
+                        </div>
+                    </td>
+                </tr>
+            `).join('') : '<tr><td colspan="9" class="empty">没有匹配的实例</td></tr>';
+        }
+
+        function renderBackups() {
+            const tbody = document.getElementById('backupsTable');
+            if (!tbody) return;
+            document.getElementById('backupCount').textContent = `共 ${state.backups.length} 条备份记录`;
+            tbody.innerHTML = state.backups.length ? state.backups.map(item => {
+                const cloudBadge = item.cloud_provider === 'tencent'
+                    ? `<span class="badge ${escapeHtml(item.tc_product || 'type')}">腾讯云</span>`
+                    : '';
+                return `
+                    <tr>
+                        <td class="backup-name-cell" title="${escapeAttr(item.name || '-')}">
+                            <div class="backup-name-content">
+                                <span class="backup-name-text">${escapeHtml(item.name || '-')}</span>
+                                ${cloudBadge}
+                            </div>
+                        </td>
+                        <td>${escapeHtml(item.instance_name)}</td>
+                        <td>${escapeHtml(labelOf(item.backup_type))}</td>
+                        <td>${escapeHtml(item.size || '-')}</td>
+                        <td>${escapeHtml(item.start_time || '-')}</td>
+                        <td>${escapeHtml(item.end_time || '-')}</td>
+                        <td>${badge(item.status, labelOf(item.status))}</td>
+                        <td>${escapeHtml(item.operator || '-')}</td>
+                        <td>${iconButton('删除', '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path>', `deleteBackup(${item.id})`, 'btn-danger')}</td>
+                    </tr>
+                `;
+            }).join('') : '<tr><td colspan="9" class="empty">没有匹配的备份记录</td></tr>';
+        }
+
+        function renderBinlogPage() {
+            const tbody = document.getElementById('binlogTable');
+            if (!tbody) return;
+            renderBinlogBindingOptions();
+            document.getElementById('binlogCount').textContent = state.binlogs.length
+                ? `共 ${state.binlogs.length} 个日志文件`
+                : binlogEmptyText();
+            tbody.innerHTML = state.binlogs.length ? state.binlogs.map((item, index) => `
+                <tr>
+                    <td><div class="cell-main mono">${escapeHtml(item.file_name || item.binlog_id || '-')}</div></td>
+                    <td>${escapeHtml(item.instance_name || '-')}</td>
+                    <td>
+                        <span class="badge ${escapeHtml(item.tc_product || 'type')}">${escapeHtml(productLabel(item.tc_product))}</span>
+                        <span class="cell-sub">${escapeHtml(item.tc_region || '-')}</span>
+                    </td>
+                    <td>${escapeHtml(item.size || '-')}</td>
+                    <td>${escapeHtml(item.start_time || '-')}</td>
+                    <td>${escapeHtml(item.end_time || '-')}</td>
+                    <td>${badge(item.status || 'pending', labelOf(item.status || 'pending'))}</td>
+                    <td>
+                        <button class="btn tiny" onclick="downloadBinlog(${index})">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+                            下载
+                        </button>
+                    </td>
+                </tr>
+            `).join('') : '<tr><td colspan="8" class="empty">没有匹配的日志文件</td></tr>';
+        }
+
+        function binlogEmptyText() {
+            if (!state.binlogBindings.length) return '暂无已绑定的腾讯云实例';
+            const meta = state.binlogMeta || {};
+            if (meta.notice) return meta.notice;
+            if (meta.kind === 'postgres_xlog') {
+                return '腾讯云返回空；所选时间范围内没有 PostgreSQL WAL 日志';
+            }
+            const cfg = meta.local_binlog_config || {};
+            if (cfg.save_hours) {
+                return `腾讯云返回空；当前 CDB 本地归档日志保留 ${cfg.save_hours} 小时，空间阈值 ${cfg.max_usage || '-'}%`;
+            }
+            if (typeof meta.unfiltered_count === 'number' && meta.unfiltered_count === 0) {
+                return '腾讯云返回空；不带时间条件查询也没有可列出的归档日志';
+            }
+            return '请选择时间范围并查询';
+        }
+
+        function renderBinlogBindingOptions() {
+            const select = document.getElementById('binlogBinding');
+            if (!select) return;
+            const current = String(state.selectedBinlogBindingId || select.value || '');
+            select.innerHTML = state.binlogBindings.length
+                ? state.binlogBindings.map(item => {
+                    const product = productLabel(item.tc_product);
+                    return `<option value="${item.id}">${escapeHtml(item.instance_name || item.tc_instance_id)} · ${product} · ${escapeHtml(item.tc_region)}</option>`;
+                }).join('')
+                : '<option value="">暂无已绑定实例</option>';
+            if (current && state.binlogBindings.some(item => String(item.id) === current)) {
+                select.value = current;
+            } else if (state.binlogBindings[0]) {
+                select.value = state.binlogBindings[0].id;
+                state.selectedBinlogBindingId = state.binlogBindings[0].id;
+            }
+        }
+
+        function renderLogs() {
+            const tbody = document.getElementById('logsTable');
+            if (!tbody) return;
+            document.getElementById('logCount').textContent = `最近 ${state.logs.length} 条`;
+            tbody.innerHTML = state.logs.length ? state.logs.map(log => `
+                <tr>
+                    <td>${escapeHtml(log.checked_at)}</td>
+                    <td>${escapeHtml(log.instance_name || '快速检测')}</td>
+                    <td class="mono">${escapeHtml(log.host)}:${escapeHtml(log.port)}</td>
+                    <td>${badge('type', log.db_type)}</td>
+                    <td>${log.success ? badge('success', '成功') : badge('failed', '失败')}</td>
+                    <td>${log.response_time === null || log.response_time === undefined ? '-' : `${log.response_time}s`}</td>
+                    <td title="${escapeHtml(log.message)}">${escapeHtml(log.message)}</td>
+                </tr>
+            `).join('') : '<tr><td colspan="7" class="empty">暂无检测日志</td></tr>';
+        }
+
+        function renderQueryInstances() {
+            const container = document.getElementById('queryInstances');
+            if (!container) return;
+            const candidates = state.instances.filter(item => ['MySQL', 'PostgreSQL'].includes(item.db_type));
+            if (!state.selectedInstanceId && candidates[0]) {
+                state.selectedInstanceId = candidates[0].id;
+            }
+            container.innerHTML = candidates.length ? candidates.map(inst => `
+                <button class="instance-option ${state.selectedInstanceId === inst.id ? 'active' : ''}" onclick="selectQueryInstance(${inst.id})">
+                    <div class="cell-main">${escapeHtml(inst.name)}</div>
+                    <div class="cell-sub">${escapeHtml(inst.db_type)} · ${escapeHtml(inst.host)}:${escapeHtml(inst.port)}</div>
+                </button>
+            `).join('') : '<div class="empty">暂无可查询实例</div>';
+            const selected = state.instances.find(item => item.id === state.selectedInstanceId);
+            document.getElementById('queryTarget').textContent = selected
+                ? `${selected.name} · ${selected.host}:${selected.port}`
+                : '未选择实例';
+        }
+
+        function renderBackupInstanceOptions() {
+            const select = document.getElementById('backupInstance');
+            if (!select) return;
+            const current = select.value;
+            select.innerHTML = state.instances.map(inst => `<option value="${inst.id}">${escapeHtml(inst.name)}</option>`).join('');
+            if (current && state.instances.some(inst => String(inst.id) === current)) {
+                select.value = current;
+            }
+        }
+
+        function renderCurrentPage() {
+            renderDashboard();
+            renderInstances();
+            renderBackups();
+            renderBinlogPage();
+            renderMonitorPage();
+            renderLogs();
+            renderQueryInstances();
+            renderBackupInstanceOptions();
+            renderSlowPage();
+        }
+
+        async function checkInstance(id) {
+            try {
+                toast('正在检测实例...', 'info');
+                const data = await api(buildInstanceCheckPath(id), { method: 'POST' });
+                toast(data.data.success ? '检测成功' : `检测失败：${data.data.message}`, data.data.success ? 'success' : 'error');
+                await Promise.all([loadDashboard(), loadInstances(), loadLogs()]);
+            } catch (error) {
+                toast(`检测失败：${error.message}`, 'error');
+            }
+        }
+
+        async function batchCheck() {
+            if (!confirm('确定批量检测所有实例吗？')) return;
+            try {
+                const data = await api('/api/instances/batch-check', { method: 'POST' });
+                const failed = data.data.results.filter(item => !item.success).length;
+                toast(`批量检测完成，失败 ${failed} 个`, failed ? 'warning' : 'success');
+                await refreshAll();
+            } catch (error) {
+                toast(`批量检测失败：${error.message}`, 'error');
+            }
+        }
+
+        function openInstanceModal(instance = null) {
+            document.getElementById('instanceModalTitle').textContent = instance ? '编辑实例' : '新增实例';
+            document.getElementById('formId').value = instance?.id || '';
+            document.getElementById('formName').value = instance?.name || '';
+            document.getElementById('formHost').value = instance?.host || '';
+            document.getElementById('formPort').value = instance?.port || '';
+            document.getElementById('formType').value = instance?.db_type || 'MySQL';
+            document.getElementById('formEnv').value = instance?.environment || 'prod';
+            document.getElementById('formUsername').value = instance?.username || '';
+            document.getElementById('formPassword').value = '';
+            document.getElementById('formDatabase').value = instance?.database || '';
+            document.getElementById('formVersion').value = instance?.version || '';
+            document.getElementById('formOwner').value = instance?.owner || '';
+            document.getElementById('formRemark').value = instance?.remark || '';
+            document.getElementById('testAfterSave').checked = true;
+            const result = document.getElementById('saveConnectionResult');
+            result.className = 'save-result';
+            result.textContent = '';
+            document.getElementById('instanceModal').classList.add('show');
+        }
+
+        function closeInstanceModal() {
+            document.getElementById('instanceModal').classList.remove('show');
+        }
+
+        function editInstance(id) {
+            const instance = state.instances.find(item => item.id === id);
+            if (instance) openInstanceModal(instance);
+        }
+
+        async function deleteInstance(id) {
+            if (!confirm('确定删除这个实例吗？相关备份、腾讯云绑定和慢 SQL 记录也会删除。')) return;
+            try {
+                await api(`/api/instances/${id}`, { method: 'DELETE' });
+                toast('实例已删除', 'success');
+                await refreshAll();
+            } catch (error) {
+                toast(`删除失败：${error.message}`, 'error');
+            }
+        }
+
+        async function deleteBackup(id) {
+            if (!confirm('确定删除这条备份记录吗？')) return;
+            try {
+                await api(`/api/backups/${id}`, { method: 'DELETE' });
+                toast('备份记录已删除', 'success');
+                await Promise.all([loadDashboard(), loadBackups()]);
+            } catch (error) {
+                toast(`删除失败：${error.message}`, 'error');
+            }
+        }
+
+        async function tencentBindingsForInstance(instanceId) {
+            const data = await api(`/api/bindings?instance_id=${encodeURIComponent(instanceId)}`);
+            return (data.data.items || []).filter(item =>
+                item.enabled && ['cdb', 'cynosdb', 'postgres'].includes(item.tc_product)
+            );
+        }
+
+        async function createBackup() {
+            const instanceId = document.getElementById('backupInstance').value;
+            if (!instanceId) {
+                toast('请先选择实例', 'warning');
+                return;
+            }
+            try {
+                const bindings = await tencentBindingsForInstance(instanceId);
+                if (bindings.length) {
+                    const selected = document.getElementById('backupInstance');
+                    const instanceName = selected.options[selected.selectedIndex]?.textContent || `#${instanceId}`;
+                    const targets = bindings
+                        .map(item => `${productLabel(item.tc_product)} ${item.tc_region} ${item.tc_instance_id}`)
+                        .join('\n');
+                    const ok = confirm(
+                        `实例 ${instanceName} 已绑定腾讯云：\n${targets}\n\n` +
+                        '后端默认禁用真实云端备份。若已设置 DBCHECK_CLOUD_BACKUP_ENABLED=true，继续会向腾讯云发起手动备份，可能增加备份存储费用。\n\n' +
+                        '确定继续？'
+                    );
+                    if (!ok) return;
+                }
+                const result = await api('/api/backups', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        instance_id: Number(instanceId),
+                        backup_type: document.getElementById('backupType').value
+                    })
+                });
+                toast(result.message || '备份任务已创建', 'success');
+                if (result.data?.cloud_provider === 'tencent') {
+                    startBackupCreatePolling(Number(instanceId));
+                }
+                await Promise.all([loadDashboard(), loadBackups()]);
+            } catch (error) {
+                toast(`创建失败：${error.message}`, 'error');
+            }
+        }
+
+        async function syncTencentBackups(options = {}) {
+            const { silent = false, instanceId = null } = options || {};
+            if (state.backupSyncing) {
+                if (!silent) toast('备份同步正在进行中', 'info');
+                return null;
+            }
+            state.backupSyncing = true;
+            try {
+                if (!silent) toast('正在同步腾讯云备份...', 'info');
+                const params = new URLSearchParams();
+                if (instanceId) params.set('instance_id', instanceId);
+                const result = await api(`/api/backups/sync-tencent${params.toString() ? '?' + params.toString() : ''}`, { method: 'POST' });
+                const data = result.data || {};
+                const type = data.errors?.length ? 'warning' : 'success';
+                if (!silent) toast(`${result.message}，拉取 ${data.fetched || 0} 条`, type);
+                await Promise.all([loadDashboard(), loadBackups()]);
+                return result;
+            } catch (error) {
+                if (!silent) toast(`同步失败：${error.message}`, 'error');
+                throw error;
+            } finally {
+                state.backupSyncing = false;
+            }
+        }
+
+        function toDateTimeLocal(date) {
+            const pad = n => String(n).padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        }
+
+        function ensureBinlogWindow() {
+            const start = document.getElementById('binlogStart');
+            const end = document.getElementById('binlogEnd');
+            if (!start || !end || (start.value && end.value)) return;
+            const now = new Date();
+            const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            if (!start.value) start.value = toDateTimeLocal(yesterday);
+            if (!end.value) end.value = toDateTimeLocal(now);
+        }
+
+        function binlogTimeParam(value) {
+            if (!value) return '';
+            const normalized = value.replace('T', ' ');
+            return normalized.length === 16 ? `${normalized}:00` : normalized;
+        }
+
+        async function loadBinlogBindings() {
+            ensureBinlogWindow();
+            const data = await api('/api/bindings');
+            state.binlogBindings = (data.data.items || [])
+                .filter(item => ['cdb', 'cynosdb', 'postgres'].includes(item.tc_product));
+            if (!state.selectedBinlogBindingId && state.binlogBindings[0]) {
+                state.selectedBinlogBindingId = state.binlogBindings[0].id;
+            }
+            renderBinlogPage();
+        }
+
+        async function loadBinlogs() {
+            ensureBinlogWindow();
+            const select = document.getElementById('binlogBinding');
+            const bindingId = select?.value;
+            if (!bindingId) {
+                toast('请选择已绑定实例', 'warning');
+                return;
+            }
+            state.selectedBinlogBindingId = Number(bindingId);
+            const params = new URLSearchParams();
+            params.set('binding_id', bindingId);
+            params.set('limit', document.getElementById('binlogLimit')?.value || '200');
+            const start = binlogTimeParam(document.getElementById('binlogStart')?.value);
+            const end = binlogTimeParam(document.getElementById('binlogEnd')?.value);
+            if (start) params.set('start_time', start);
+            if (end) params.set('end_time', end);
+            try {
+                toast('正在查询日志文件...', 'info');
+                const data = await api(`/api/binlogs?${params.toString()}`);
+                state.binlogs = data.data.items || [];
+                state.binlogMeta = data.data.meta || null;
+                renderBinlogPage();
+                toast(`查询完成：${state.binlogs.length} 个日志文件`, 'success');
+            } catch (error) {
+                state.binlogs = [];
+                state.binlogMeta = null;
+                renderBinlogPage();
+                toast(`查询失败：${error.message}`, 'error');
+            }
+        }
+
+        async function downloadBinlog(index) {
+            const item = state.binlogs[index];
+            if (!item) return;
+            try {
+                let url = item.download_url;
+                if (!url) {
+                    if (!item.binlog_id) {
+                        toast('当前日志文件缺少下载 ID', 'error');
+                        return;
+                    }
+                    const params = new URLSearchParams({
+                        binding_id: String(item.binding_id),
+                        binlog_id: String(item.binlog_id),
+                    });
+                    const data = await api(`/api/binlogs/download-url?${params.toString()}`);
+                    url = data.data.download_url;
+                }
+                if (!url) {
+                    toast('腾讯云未返回下载地址', 'error');
+                    return;
+                }
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = item.file_name || 'db-log';
+                link.target = '_blank';
+                link.rel = 'noopener';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                toast('已发起下载', 'success');
+            } catch (error) {
+                toast(`下载失败：${error.message}`, 'error');
+            }
+        }
+
+        function selectQueryInstance(id) {
+            state.selectedInstanceId = id;
+            renderQueryInstances();
+        }
+
+        async function executeSQL() {
+            if (!state.selectedInstanceId) {
+                toast('请先选择可查询实例', 'warning');
+                return;
+            }
+            const sql = document.getElementById('sqlEditor').value.trim();
+            if (!sql) {
+                toast('请输入 SQL', 'warning');
+                return;
+            }
+            document.getElementById('queryTime').textContent = '执行中';
+            try {
+                const data = await api('/api/sql/execute', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        instance_id: state.selectedInstanceId,
+                        sql,
+                        limit: 1000
+                    })
+                });
+                if (!data.success) {
+                    state.result = null;
+                    renderQueryResult({ columns: ['message'], rows: [{ message: data.message }], row_count: 1, execution_time: data.execution_time || 0 });
+                    toast(data.message || '查询失败', 'error');
+                    return;
+                }
+                state.result = data;
+                renderQueryResult(data);
+                toast(`查询成功，返回 ${data.row_count} 行`, 'success');
+            } catch (error) {
+                toast(`查询失败：${error.message}`, 'error');
+            }
+        }
+
+        function renderQueryResult(data) {
+            document.getElementById('queryTime').textContent = `耗时 ${data.execution_time || 0}s`;
+            document.getElementById('queryRows').textContent = `返回 ${data.row_count || 0} 行`;
+            const header = document.getElementById('resultHeader');
+            const body = document.getElementById('resultBody');
+            const columns = data.columns || [];
+            if (!columns.length) {
+                header.innerHTML = '';
+                body.innerHTML = '<tr><td class="empty">无结果列</td></tr>';
+                return;
+            }
+            header.innerHTML = `<tr>${columns.map(col => `<th>${escapeHtml(col)}</th>`).join('')}</tr>`;
+            body.innerHTML = (data.rows || []).length ? data.rows.map(row => `
+                <tr>${columns.map(col => `<td>${escapeHtml(row[col] ?? 'NULL')}</td>`).join('')}</tr>
+            `).join('') : `<tr><td colspan="${columns.length}" class="empty">无数据</td></tr>`;
+        }
+
+        function formatSQL() {
+            const editor = document.getElementById('sqlEditor');
+            const keywords = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'ON', 'AND', 'OR'];
+            let sql = editor.value.trim().replace(/\s+/g, ' ');
+            keywords.forEach(keyword => {
+                const pattern = new RegExp(`\\s+${keyword}\\s+`, 'ig');
+                sql = sql.replace(pattern, `\n${keyword} `);
+            });
+            editor.value = sql;
+        }
+
+        function clearSQL() {
+            document.getElementById('sqlEditor').value = '';
+        }
+
+        function copyResult() {
+            if (!state.result || !state.result.columns?.length) {
+                toast('没有可复制的结果', 'warning');
+                return;
+            }
+            const rows = [state.result.columns.join('\t')].concat(
+                state.result.rows.map(row => state.result.columns.map(col => row[col] ?? '').join('\t'))
+            );
+            navigator.clipboard.writeText(rows.join('\n'))
+                .then(() => toast('结果已复制', 'success'))
+                .catch(() => toast('复制失败', 'error'));
+        }
+
+        function exportResult() {
+            if (!state.result || !state.result.columns?.length) {
+                toast('没有可导出的结果', 'warning');
+                return;
+            }
+            const rows = [state.result.columns].concat(
+                state.result.rows.map(row => state.result.columns.map(col => row[col] ?? ''))
+            );
+            const csv = rows.map(row => row.map(cell => {
+                const text = String(cell);
+                return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+            }).join(',')).join('\n');
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `query_result_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function switchPage(page) {
+            state.page = page;
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.page === page);
+            });
+            document.querySelectorAll('.page').forEach(item => {
+                item.classList.toggle('active', item.id === `page-${page}`);
+            });
+            const activeNav = document.querySelector(`.nav-item[data-page="${page}"]`);
+            if (activeNav) {
+                const label = activeNav.querySelector('.nav-label')?.textContent.trim() || activeNav.textContent.trim();
+                document.getElementById('pageTitle').textContent = label;
+            }
+            renderCurrentPage();
+            if (page === 'binlog') {
+                loadBinlogBindings().catch(error => toast(error.message, 'error'));
+            }
+            if (page === 'monitor') {
+                if (!state.monitorBindings.length) {
+                    loadMonitorBindings().catch(error => toast(error.message, 'error'));
+                } else {
+                    renderMonitorPage();
+                    setTimeout(() => state.monitorChart && state.monitorChart.resize(), 50);
+                }
+            }
+            if (page === 'backups') {
+                startBackupAutoSync();
+                if (hasRunningTencentBackups()) {
+                    syncTencentBackups({ silent: true }).catch(error => console.warn('backup auto sync failed', error));
+                }
+            } else {
+                stopBackupAutoSync();
+            }
+        }
+
+        function openInstancesFromDashboard(status) {
+            document.getElementById('instanceKeyword').value = '';
+            document.getElementById('instanceStatus').value = status || '';
+            document.getElementById('instanceType').value = '';
+            switchPage('instances');
+            loadInstances().catch(error => toast(error.message, 'error'));
+        }
+
+        function handleDashboardCardKey(event, status) {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            openInstancesFromDashboard(status);
+        }
+
+        document.querySelectorAll('.nav-item').forEach(button => {
+            button.addEventListener('click', () => switchPage(button.dataset.page));
+        });
+
+        ['instanceKeyword', 'instanceStatus', 'instanceType'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => loadInstances().catch(error => toast(error.message, 'error')));
+            document.getElementById(id).addEventListener('change', () => loadInstances().catch(error => toast(error.message, 'error')));
+        });
+
+        ['backupKeyword', 'backupStatus'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => loadBackups().catch(error => toast(error.message, 'error')));
+            document.getElementById(id).addEventListener('change', () => loadBackups().catch(error => toast(error.message, 'error')));
+        });
+
+        document.getElementById('monitorBinding').addEventListener('change', () => {
+            state.monitorMetrics = [];
+            state.monitorMetricData = null;
+            state.monitorSelectedMetricName = null;
+            loadMonitorMetrics().catch(error => toast(error.message, 'error'));
+        });
+        document.getElementById('monitorMetricKeyword').addEventListener('input', () => {
+            renderMonitorMetricOptions();
+        });
+        document.getElementById('monitorMetric').addEventListener('change', event => {
+            selectMonitorMetric(event.target.value);
+        });
+        ['monitorPeriod', 'monitorRange'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                if (state.monitorMetricData) loadMonitorData().catch(error => toast(error.message, 'error'));
+            });
+        });
+        window.addEventListener('resize', () => {
+            if (state.monitorChart) state.monitorChart.resize();
+        });
+
+        document.getElementById('binlogBinding').addEventListener('change', event => {
+            state.selectedBinlogBindingId = Number(event.target.value) || null;
+            state.binlogs = [];
+            state.binlogMeta = null;
+            renderBinlogPage();
+        });
+
+        document.getElementById('instanceForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const submitButton = form.querySelector('button[type="submit"]');
+            const originalSubmitText = submitButton.textContent;
+            const id = document.getElementById('formId').value;
+            const payload = {
+                name: document.getElementById('formName').value.trim(),
+                host: document.getElementById('formHost').value.trim(),
+                port: Number(document.getElementById('formPort').value),
+                db_type: document.getElementById('formType').value,
+                environment: document.getElementById('formEnv').value,
+                username: document.getElementById('formUsername').value.trim() || null,
+                database: document.getElementById('formDatabase').value.trim() || null,
+                version: document.getElementById('formVersion').value.trim() || null,
+                owner: document.getElementById('formOwner').value.trim() || null,
+                remark: document.getElementById('formRemark').value.trim() || null
+            };
+            const password = document.getElementById('formPassword').value;
+            if (password || !id) payload.password = password;
+            const shouldTest = document.getElementById('testAfterSave').checked;
+            let saveCompleted = false;
+            try {
+                submitButton.disabled = true;
+                submitButton.textContent = shouldTest ? '保存并检测中...' : '保存中...';
+                setSaveConnectionResult('warning', '正在保存实例...');
+                const saved = await api(id ? `/api/instances/${id}` : '/api/instances', {
+                    method: id ? 'PUT' : 'POST',
+                    body: JSON.stringify(payload)
+                });
+                saveCompleted = true;
+                const savedId = saved.data?.id || Number(id);
+                if (!shouldTest) {
+                    toast(id ? '实例已更新' : '实例已创建', 'success');
+                    closeInstanceModal();
+                    await refreshAll();
+                    return;
+                }
+
+                setSaveConnectionResult('warning', '实例已保存，正在测试连接...');
+                const check = await api(buildInstanceCheckPath(savedId, password), { method: 'POST' });
+                const result = check.data || {};
+                if (result.success) {
+                    setSaveConnectionResult('success', `连接测试成功：${result.message || '连接成功'}`);
+                    toast(id ? '实例已更新，连接测试成功' : '实例已创建，连接测试成功', 'success');
+                    closeInstanceModal();
+                } else {
+                    setSaveConnectionResult('error', `实例已保存，但连接测试失败：${result.message || '未知错误'}`);
+                    toast(`实例已保存，但连接测试失败：${result.message || '未知错误'}`, 'error');
+                }
+                await refreshAll();
+            } catch (error) {
+                const message = saveCompleted
+                    ? `实例已保存，但连接测试失败：${error.message}`
+                    : `保存失败：${error.message}`;
+                setSaveConnectionResult('error', message);
+                toast(message, 'error');
+                if (saveCompleted) {
+                    await refreshAll();
+                }
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = originalSubmitText;
+            }
+        });
+
+        document.getElementById('instanceModal').addEventListener('click', event => {
+            if (event.target.id === 'instanceModal') closeInstanceModal();
+        });
+
+        document.getElementById('sqlEditor').addEventListener('keydown', event => {
+            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                event.preventDefault();
+                executeSQL();
+            }
+        });
+
+        // ============================================================
+        // 慢 SQL 模块
+        // ============================================================
+
+        const slowSubPages = ['list', 'stats', 'detail'];
+        const slowChartInstances = { top: null, db: null, time: null };
+
+        function renderSlowPage() {
+            if (state.page !== 'slow-sql') return;
+            const sub = state.slowSubPage;
+            slowSubPages.forEach(name => {
+                const el = document.getElementById(`slow${name[0].toUpperCase() + name.slice(1)}View`);
+                if (el) el.style.display = (name === sub) ? '' : 'none';
+            });
+            document.querySelectorAll('#slowSqlTabs .subtab').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.sub === sub);
+            });
+            if (sub === 'list') loadSlowQueries();
+            else if (sub === 'stats') loadSlowStats();
+            else if (sub === 'detail') renderSlowDetailBody();
+            loadSchedulerStatus();
+            loadTCBindings();
+        }
+
+        document.querySelectorAll('#slowSqlTabs .subtab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                state.slowSubPage = btn.dataset.sub;
+                renderSlowPage();
+            });
+        });
+
+        async function loadTCCredentials() {
+            const data = await api('/api/tc/credentials');
+            state.slowCredentials = data.data.items || [];
+            renderCredentialList();
+            // 同步刷新绑定 modal 里的凭证下拉
+            refreshCredentialSelect();
+            refreshDiscoveryCredentialSelect();
+        }
+
+        function renderCredentialList() {
+            const container = document.getElementById('credentialList');
+            if (!container) return;
+            if (!state.slowCredentials.length) {
+                container.innerHTML = '<p class="muted">尚未录入凭证</p>';
+                return;
+            }
+            container.innerHTML = state.slowCredentials.map(c => `
+                <div class="binding-card">
+                    <div>
+                        <div><strong>${escapeHtml(c.name)}</strong> ${c.is_default ? '<span class="badge ok" style="font-size:10px;">默认</span>' : ''}</div>
+                        <div class="meta">
+                            <span>SecretId: <code>${escapeHtml(c.secret_id)}</code></span>
+                            <span>endpoint: ${escapeHtml(c.endpoint_suffix || 'tencentcloudapi.com')}</span>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn tiny" onclick="testTCCredential(${c.id})">测试</button>
+                        <button class="btn tiny" onclick="editTCCredential(${c.id})">编辑</button>
+                        <button class="btn tiny danger" onclick="deleteTCCredential(${c.id})">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function refreshCredentialSelect() {
+            const sel = document.getElementById('bindFormCredential');
+            if (!sel) return;
+            const current = sel.value;
+            sel.innerHTML = '<option value="">-- 请选择凭证 --</option>' +
+                state.slowCredentials.map(c => `<option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.secret_id)})</option>`).join('');
+            if (current) sel.value = current;
+        }
+
+        function openCredentialModal(cred = null) {
+            document.getElementById('credFormId').value = cred ? cred.id : '';
+            document.getElementById('credFormName').value = cred ? cred.name : '';
+            document.getElementById('credFormSecretId').value = cred ? cred.secret_id : '';
+            document.getElementById('credFormSecretKey').value = '';
+            document.getElementById('credFormEndpoint').value = cred ? (cred.endpoint_suffix || 'tencentcloudapi.com') : 'tencentcloudapi.com';
+            document.getElementById('credFormDefault').checked = cred ? !!cred.is_default : false;
+            document.getElementById('credentialModalTitle').textContent = cred ? '编辑腾讯云凭证' : '新增腾讯云凭证';
+            document.getElementById('credentialModal').classList.add('show');
+            loadTCCredentials();
+        }
+
+        function closeCredentialModal() {
+            document.getElementById('credentialModal').classList.remove('show');
+        }
+
+        document.getElementById('credentialModal').addEventListener('click', e => {
+            if (e.target.id === 'credentialModal') closeCredentialModal();
+        });
+
+        document.getElementById('credentialForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const id = document.getElementById('credFormId').value;
+            const payload = {
+                name: document.getElementById('credFormName').value.trim(),
+                secret_id: document.getElementById('credFormSecretId').value.trim(),
+                endpoint_suffix: document.getElementById('credFormEndpoint').value.trim() || 'tencentcloudapi.com',
+                is_default: document.getElementById('credFormDefault').checked,
+            };
+            const sk = document.getElementById('credFormSecretKey').value;
+            if (sk) payload.secret_key = sk;
+            else if (!id) { toast('请填写 SecretKey', 'error'); return; }
+            try {
+                await api(id ? `/api/tc/credentials/${id}` : '/api/tc/credentials', {
+                    method: id ? 'PUT' : 'POST',
+                    body: JSON.stringify(payload),
+                });
+                toast(id ? '凭证已更新' : '凭证已创建', 'success');
+                await loadTCCredentials();
+                document.getElementById('credFormSecretKey').value = '';
+            } catch (err) {
+                toast(`保存失败：${err.message}`, 'error');
+            }
+        });
+
+        async function testTCCredential(id) {
+            try {
+                toast('正在测试凭证…', 'info');
+                const data = await api(`/api/tc/credentials/${id}/test`, { method: 'POST' });
+                toast(`凭证有效 (${data.data.region_used})`, 'success');
+            } catch (err) {
+                toast(`测试失败：${err.message}`, 'error');
+            }
+        }
+
+        function editTCCredential(id) {
+            const c = state.slowCredentials.find(x => x.id === id);
+            if (c) openCredentialModal(c);
+        }
+
+        async function deleteTCCredential(id) {
+            if (!confirm('确定删除该凭证？相关绑定需先解绑。')) return;
+            try {
+                await api(`/api/tc/credentials/${id}`, { method: 'DELETE' });
+                toast('凭证已删除', 'success');
+                await loadTCCredentials();
+            } catch (err) {
+                toast(`删除失败：${err.message}`, 'error');
+            }
+        }
+
+        async function loadTCBindings() {
+            try {
+                const data = await api('/api/bindings');
+                state.slowBindings = data.data.items || [];
+            } catch (e) {
+                state.slowBindings = [];
+            }
+            renderSlowBindingsList();
+            refreshInstanceSelect();
+            refreshFilterInstanceSelect();
+        }
+
+        function renderSlowBindingsList() {
+            const container = document.getElementById('slowBindingsList');
+            if (container) renderBindingSummary(container);
+            const modalList = document.getElementById('bindingList');
+            const modal = document.getElementById('bindingModal');
+            if (modalList && modal && modal.classList.contains('show')) {
+                modalList.innerHTML = renderBindingCards();
+            } else if (modalList) {
+                modalList.innerHTML = '';
+            }
+        }
+
+        function renderBindingCards() {
+            if (!state.slowBindings.length) {
+                return '<p class="muted">尚未绑定任何腾讯云实例。</p>';
+            }
+            return state.slowBindings.map(b => {
+                const errBadge = b.last_error
+                    ? `<span class="badge bad" title="${escapeHtml(b.last_error)}">异常</span>`
+                    : (b.consecutive_failures > 0
+                        ? `<span class="badge warn">失败 ${b.consecutive_failures} 次</span>`
+                        : `<span class="badge ok">正常</span>`);
+                return `
+                <div class="binding-card">
+                    <div>
+                        <div>
+                            <strong>${escapeHtml(b.instance_name || ('#' + b.instance_id))}</strong>
+                            <span class="badge ${b.tc_product}">${escapeHtml(productLabel(b.tc_product))}</span>
+                            ${b.enabled ? '' : '<span class="badge dim">已停用</span>'}
+                            ${errBadge}
+                        </div>
+                        <div class="meta">
+                            <span>实例：<code>${escapeHtml(b.tc_instance_id)}</code></span>
+                            <span>地域：${escapeHtml(b.tc_region)}</span>
+                            <span>凭证：${escapeHtml(b.credential_name || '-')}</span>
+                            <span>上次拉取：${escapeHtml(b.last_poll_at || '-')}</span>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn tiny" onclick="editBinding(${b.id})">编辑</button>
+                        <button class="btn tiny danger" onclick="deleteBinding(${b.id})">删除</button>
+	                    </div>
+	                </div>`;
+            }).join('');
+        }
+
+        function renderBindingSummary(container) {
+            if (!state.slowBindings.length) {
+                container.innerHTML = '<p class="muted">尚未绑定任何腾讯云实例；可以通过右上角按钮自动导入或手动绑定。</p>';
+                return;
+            }
+            const total = state.slowBindings.length;
+            const enabled = state.slowBindings.filter(b => b.enabled).length;
+            const failing = state.slowBindings.filter(b => b.last_error || Number(b.consecutive_failures || 0) > 0).length;
+            const products = state.slowBindings.reduce((acc, b) => {
+                acc[b.tc_product] = (acc[b.tc_product] || 0) + 1;
+                return acc;
+            }, {});
+            const regions = state.slowBindings.reduce((acc, b) => {
+                acc[b.tc_region] = (acc[b.tc_region] || 0) + 1;
+                return acc;
+            }, {});
+            const productText = Object.entries(products)
+                .map(([product, count]) => `${productLabel(product)} ${count}`)
+                .join(' / ');
+            const regionText = Object.entries(regions)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 4)
+                .map(([region, count]) => `${region} ${count}`)
+                .join(' / ');
+            const failedPreview = state.slowBindings
+                .filter(b => b.last_error || Number(b.consecutive_failures || 0) > 0)
+                .slice(0, 3)
+                .map(b => `<span class="badge bad" title="${escapeHtml(b.last_error || '')}">${escapeHtml(b.instance_name || b.tc_instance_id)}</span>`)
+                .join('');
+
+            container.innerHTML = `
+                <div class="binding-summary">
+                    <div class="binding-summary-item"><strong>${total}</strong><span>接入实例</span></div>
+                    <div class="binding-summary-item"><strong>${enabled}</strong><span>启用调度</span></div>
+                    <div class="binding-summary-item"><strong>${failing}</strong><span>异常绑定</span></div>
+                    <div class="binding-summary-item"><strong>${Object.keys(regions).length}</strong><span>地域数量</span></div>
+                </div>
+                <div class="binding-summary-meta">
+                    <span class="muted">产品：${escapeHtml(productText || '-')}</span>
+                    <span class="muted">地域：${escapeHtml(regionText || '-')}</span>
+                    ${failedPreview ? `<span class="muted">异常：</span>${failedPreview}` : ''}
+                </div>
+                <div class="binding-summary-actions">
+                    <span class="muted">完整绑定列表已收起，避免占用慢查询列表空间。</span>
+                    <button class="btn tiny" onclick="openBindingModal()">查看 / 管理绑定</button>
+                </div>
+            `;
+        }
+
+        function refreshInstanceSelect() {
+            const sel = document.getElementById('bindFormInstance');
+            if (!sel) return;
+            const current = sel.value;
+            sel.innerHTML = '<option value="">-- 请选择实例 --</option>' +
+                state.instances.map(i => `<option value="${i.id}">${escapeHtml(i.name)} (${escapeHtml(i.db_type)})</option>`).join('');
+            if (current) sel.value = current;
+        }
+
+        function refreshFilterInstanceSelect() {
+            const sel = document.getElementById('slowFilterInstance');
+            if (!sel) return;
+            const current = sel.value;
+            sel.innerHTML = '<option value="">全部</option>' +
+                state.instances.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
+            if (current) sel.value = current;
+        }
+
+        function openBindingModal(b = null) {
+            if (!state.slowCredentials.length) {
+                toast('请先录入腾讯云凭证', 'warning');
+                openCredentialModal();
+                return;
+            }
+            document.getElementById('bindFormId').value = b ? b.id : '';
+            refreshInstanceSelect();
+            refreshCredentialSelect();
+            document.getElementById('bindFormProduct').value = b ? b.tc_product : 'cdb';
+            document.getElementById('bindFormRegion').value = b ? b.tc_region : '';
+            document.getElementById('bindFormInstanceId').value = b ? b.tc_instance_id : '';
+            document.getElementById('bindFormCredential').value = b ? b.credential_id : '';
+            document.getElementById('bindFormEnabled').checked = b ? !!b.enabled : true;
+            document.getElementById('bindingModalTitle').textContent = b ? '编辑 TC 绑定' : '新增 TC 绑定';
+            document.getElementById('bindingModal').classList.add('show');
+            const modalList = document.getElementById('bindingList');
+            if (modalList) modalList.innerHTML = renderBindingCards();
+            loadTCBindings();
+        }
+
+        function closeBindingModal() {
+            document.getElementById('bindingModal').classList.remove('show');
+            const modalList = document.getElementById('bindingList');
+            if (modalList) modalList.innerHTML = '';
+        }
+
+        document.getElementById('bindingModal').addEventListener('click', e => {
+            if (e.target.id === 'bindingModal') closeBindingModal();
+        });
+
+        document.getElementById('bindingForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const id = document.getElementById('bindFormId').value;
+            const payload = {
+                instance_id: Number(document.getElementById('bindFormInstance').value),
+                tc_product: document.getElementById('bindFormProduct').value,
+                tc_region: document.getElementById('bindFormRegion').value.trim(),
+                tc_instance_id: document.getElementById('bindFormInstanceId').value.trim(),
+                credential_id: Number(document.getElementById('bindFormCredential').value),
+                enabled: document.getElementById('bindFormEnabled').checked,
+            };
+            if (!payload.instance_id || !payload.tc_region || !payload.tc_instance_id || !payload.credential_id) {
+                toast('请完整填写绑定信息', 'error');
+                return;
+            }
+            try {
+                await api(id ? `/api/bindings/${id}` : '/api/bindings', {
+                    method: id ? 'PUT' : 'POST',
+                    body: JSON.stringify(payload),
+                });
+                toast(id ? '绑定已更新' : '绑定已创建', 'success');
+                await loadTCBindings();
+                await loadSchedulerStatus();
+            } catch (err) {
+                toast(`保存失败：${err.message}`, 'error');
+            }
+        });
+
+        function editBinding(id) {
+            const b = state.slowBindings.find(x => x.id === id);
+            if (b) openBindingModal(b);
+        }
+
+        async function deleteBinding(id) {
+            if (!confirm('确定删除该绑定？历史慢 SQL 记录会一并删除。')) return;
+            try {
+                await api(`/api/bindings/${id}`, { method: 'DELETE' });
+                toast('绑定已删除', 'success');
+                await loadTCBindings();
+            } catch (err) {
+                toast(`删除失败：${err.message}`, 'error');
+            }
+        }
+
+        function refreshDiscoveryCredentialSelect() {
+            const sel = document.getElementById('discoveryCredential');
+            if (!sel) return;
+            const current = sel.value;
+            sel.innerHTML = '<option value="">-- 请选择凭证 --</option>' +
+                state.slowCredentials.map(c => `<option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.secret_id)})</option>`).join('');
+            if (current) sel.value = current;
+            if (!sel.value && state.slowCredentials.length) {
+                const defaultCred = state.slowCredentials.find(c => c.is_default) || state.slowCredentials[0];
+                sel.value = defaultCred.id;
+            }
+        }
+
+        async function openDiscoveryModal(product = null) {
+            try {
+                await loadTCCredentials();
+                if (!state.slowCredentials.length) {
+                    toast('请先录入腾讯云凭证', 'warning');
+                    openCredentialModal();
+                    return;
+                }
+                refreshDiscoveryCredentialSelect();
+                const regions = Array.from(new Set(
+                    state.slowBindings.map(b => b.tc_region).filter(Boolean)
+                        .concat(['ap-guangzhou', 'ap-shanghai', 'ap-beijing', 'ap-singapore'])
+                ));
+                document.getElementById('discoveryRegions').value = regions.join(', ');
+                document.getElementById('discoveryProductCdb').checked = !product || product === 'cdb';
+                document.getElementById('discoveryProductCynosdb').checked = !product || product === 'cynosdb';
+                document.getElementById('discoveryProductPostgres').checked = !product || product === 'postgres';
+                document.getElementById('discoveryCreateMissing').checked = true;
+                document.getElementById('discoveryEnabled').checked = true;
+                document.getElementById('discoveryResult').innerHTML = '<p class="muted">选择凭证和地域后扫描，系统会从腾讯云拉取 CDB / TDSQL-C / PostgreSQL 实例。</p>';
+                document.getElementById('discoveryModal').classList.add('show');
+            } catch (e) {
+                toast(`加载凭证失败：${e.message}`, 'error');
+            }
+        }
+
+        function closeDiscoveryModal() {
+            document.getElementById('discoveryModal').classList.remove('show');
+        }
+
+        document.getElementById('discoveryModal').addEventListener('click', e => {
+            if (e.target.id === 'discoveryModal') closeDiscoveryModal();
+        });
+
+        function buildDiscoveryPayload() {
+            const credentialId = Number(document.getElementById('discoveryCredential').value);
+            const regions = document.getElementById('discoveryRegions').value
+                .split(/[\s,，]+/)
+                .map(x => x.trim())
+                .filter(Boolean);
+            const products = [];
+            if (document.getElementById('discoveryProductCdb').checked) products.push('cdb');
+            if (document.getElementById('discoveryProductCynosdb').checked) products.push('cynosdb');
+            if (document.getElementById('discoveryProductPostgres').checked) products.push('postgres');
+            if (!credentialId) throw new Error('请选择凭证');
+            if (!regions.length) throw new Error('请填写至少一个地域');
+            if (!products.length) throw new Error('至少选择一个产品');
+            return {
+                credential_id: credentialId,
+                regions,
+                products,
+                create_missing_instances: document.getElementById('discoveryCreateMissing').checked,
+                enabled: document.getElementById('discoveryEnabled').checked,
+            };
+        }
+
+        async function discoverTCInstances() {
+            try {
+                const payload = buildDiscoveryPayload();
+                document.getElementById('discoveryResult').innerHTML = '<p class="muted">正在扫描腾讯云实例...</p>';
+                const data = await api('/api/tc/discovery/instances', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                state.tcDiscoveryItems = data.data.items || [];
+                renderDiscoveryResult(data.data, false);
+                toast(`扫描完成，发现 ${data.data.total || 0} 个实例`, 'success');
+            } catch (e) {
+                document.getElementById('discoveryResult').innerHTML = `<p class="muted" style="color:var(--red);">${escapeHtml(e.message)}</p>`;
+                toast(`扫描失败：${e.message}`, 'error');
+            }
+        }
+
+        async function importTCInstances() {
+            try {
+                const payload = buildDiscoveryPayload();
+                document.getElementById('discoveryResult').innerHTML = '<p class="muted">正在导入并创建绑定...</p>';
+                const data = await api('/api/tc/discovery/import', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                renderDiscoveryResult(data.data, true);
+                await Promise.all([loadInstances(), loadTCBindings(), loadSchedulerStatus()]);
+                toast('导入完成', 'success');
+            } catch (e) {
+                document.getElementById('discoveryResult').innerHTML = `<p class="muted" style="color:var(--red);">${escapeHtml(e.message)}</p>`;
+                toast(`导入失败：${e.message}`, 'error');
+            }
+        }
+
+        function renderDiscoveryResult(data, imported) {
+            const target = document.getElementById('discoveryResult');
+            if (!target) return;
+            const rows = imported ? (data.results || []) : (data.items || []);
+            const errors = data.errors || [];
+            const summary = imported && data.summary
+                ? Object.entries(data.summary).map(([k, v]) => `${k}: ${v}`).join(' / ')
+                : `发现 ${data.total || rows.length || 0} 个实例`;
+            const errorHtml = errors.length ? `
+                <div style="margin: 8px 0;">
+                    <div class="muted" style="color:var(--red);">部分地域或产品扫描失败：</div>
+                    ${errors.map(e => `<div class="muted">${escapeHtml(e.region)} / ${escapeHtml(e.product)}：${escapeHtml(e.message)}</div>`).join('')}
+                </div>
+            ` : '';
+            if (!rows.length) {
+                target.innerHTML = `<p class="muted">${escapeHtml(summary)}</p>${errorHtml}`;
+                return;
+            }
+            target.innerHTML = `
+                <div class="panel-subtitle" style="margin-bottom:8px;">${escapeHtml(summary)}</div>
+                ${errorHtml}
+                <div class="table-wrap" style="max-height:360px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>产品</th>
+                                <th>地域</th>
+                                <th>实例</th>
+                                <th>内网地址</th>
+                                <th>版本/状态</th>
+                                ${imported ? '<th>导入结果</th>' : ''}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows.map(r => `
+                                <tr>
+                                    <td><span class="badge ${r.tc_product}">${escapeHtml(productLabel(r.tc_product))}</span></td>
+                                    <td>${escapeHtml(r.tc_region)}</td>
+                                    <td>
+                                        <div class="cell-main">${escapeHtml(r.name || r.tc_instance_id)}</div>
+                                        <div class="cell-sub">${escapeHtml(r.tc_instance_id)}${r.cluster_id ? ' · ' + escapeHtml(r.cluster_id) : ''}</div>
+                                    </td>
+                                    <td class="mono">${escapeHtml(r.host || '-')}:${escapeHtml(r.port || 3306)}</td>
+                                    <td>${escapeHtml(r.version || '-')} / ${escapeHtml(r.status || '-')}</td>
+                                    ${imported ? `<td><span class="badge ${r.action === 'error' ? 'bad' : (r.action === 'skipped' ? 'warn' : 'ok')}">${escapeHtml(r.action)}</span><div class="cell-sub">${escapeHtml(r.message || '')}</div></td>` : ''}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        async function loadSchedulerStatus() {
+            try {
+                const data = await api('/api/scheduler/status');
+                const s = data.data;
+                document.getElementById('slowLastTick').textContent = s.last_tick_at || '-';
+                document.getElementById('slowBindingsCount').textContent = s.enabled_bindings ?? s.bindings_count ?? 0;
+                document.getElementById('slowFailingCount').textContent = s.failing_bindings ?? 0;
+                const dot = document.getElementById('slowSyncDot');
+                const txt = document.getElementById('slowSyncText');
+                if (s.running) {
+                    dot.className = 'dot';
+                    txt.textContent = `运行中（间隔 ${s.interval_seconds}s）`;
+                } else if (s.auto_enabled === false) {
+                    dot.className = 'dot off';
+                    txt.textContent = '自动调度关闭（可手动同步）';
+                } else {
+                    dot.className = 'dot off';
+                    txt.textContent = '未运行';
+                }
+            } catch (e) {
+                document.getElementById('slowSyncText').textContent = '状态获取失败';
+            }
+        }
+
+        async function triggerSlowRefresh() {
+            try {
+                const data = await api('/api/slow-queries/refresh', { method: 'POST' });
+                toast(data.data.triggered ? '已执行立即同步' : '忽略：5s 防抖中', data.data.triggered ? 'success' : 'info');
+                if (data.data.triggered) {
+                    setTimeout(() => {
+                        loadSchedulerStatus();
+                        loadTCBindings();
+                        if (state.slowSubPage === 'list') loadSlowQueries();
+                        if (state.slowSubPage === 'stats') loadSlowStats();
+                    }, 1500);
+                }
+            } catch (e) {
+                toast(`触发失败：${e.message}`, 'error');
+            }
+        }
+
+        // ----- 慢查询列表 -----
+
+        function buildSlowFilterParams() {
+            const f = state.slowFilters;
+            const params = new URLSearchParams();
+            const inst = document.getElementById('slowFilterInstance').value;
+            const prod = document.getElementById('slowFilterProduct').value;
+            const db = document.getElementById('slowFilterDb').value.trim();
+            const minMs = document.getElementById('slowFilterMinMs').value;
+            const kw = document.getElementById('slowFilterKeyword').value.trim();
+            const fp = document.getElementById('slowFilterFp').value.trim();
+            const start = document.getElementById('slowFilterStart').value;
+            const end = document.getElementById('slowFilterEnd').value;
+            if (inst) params.set('instance_id', inst);
+            if (prod) params.set('tc_product', prod);
+            if (db) params.set('database', db);
+            if (minMs) params.set('min_query_time_ms', minMs);
+            if (kw) params.set('keyword', kw);
+            if (fp) params.set('fingerprint', fp);
+            if (start) params.set('start_ts', String(Math.floor(new Date(start + 'T00:00:00').getTime() / 1000)));
+            if (end) params.set('end_ts', String(Math.floor(new Date(end + 'T23:59:59').getTime() / 1000)));
+            params.set('page', f.page);
+            params.set('page_size', f.pageSize);
+            return params;
+        }
+
+        async function loadSlowQueries() {
+            try {
+                const data = await api(`/api/slow-queries?${buildSlowFilterParams().toString()}`);
+                state.slowQueries = data.data.items || [];
+                renderSlowQueries(data.data.total);
+            } catch (e) {
+                toast(`查询失败：${e.message}`, 'error');
+            }
+        }
+
+        function renderSlowQueries(total) {
+            const tbody = document.getElementById('slowQueriesTbody');
+            if (!tbody) return;
+            document.getElementById('slowListCount').textContent = `共 ${total} 条`;
+            document.getElementById('slowPageInfo').textContent = `第 ${state.slowFilters.page} 页 / 共 ${Math.max(1, Math.ceil(total / state.slowFilters.pageSize))} 页 · ${total} 条`;
+            if (!state.slowQueries.length) {
+                tbody.innerHTML = '<tr><td colspan="11" class="empty">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = state.slowQueries.map(q => `
+                <tr onclick="viewSlowDetail(${q.id})" style="cursor:pointer;">
+                    <td>${escapeHtml(q.ts_iso || '')}</td>
+                    <td>${escapeHtml(q.instance_name || ('#' + q.instance_id))} <span class="badge ${q.tc_product}">${escapeHtml(productLabel(q.tc_product))}</span></td>
+                    <td>${escapeHtml(q.database || '-')}</td>
+                    <td>${escapeHtml((q.user_name || '') + '@' + (q.user_host || ''))}</td>
+                    <td><span class="sql-template" title="${escapeHtml(q.sql_text || '')}">${escapeHtml(truncate(q.sql_template, 80))}</span></td>
+                    <td><span class="fp-chip">${escapeHtml((q.fingerprint || '').slice(0, 8))}</span></td>
+                    <td><strong>${q.query_time_ms}</strong></td>
+                    <td>${q.lock_time_ms}</td>
+                    <td>${q.rows_examined}</td>
+                    <td>${q.rows_sent}</td>
+                    <td><button class="btn tiny" onclick="event.stopPropagation(); viewSlowDetail(${q.id})">详情</button></td>
+                </tr>
+            `).join('');
+        }
+
+        function resetSlowFilters() {
+            ['slowFilterInstance', 'slowFilterProduct', 'slowFilterDb', 'slowFilterMinMs',
+             'slowFilterKeyword', 'slowFilterFp', 'slowFilterStart', 'slowFilterEnd'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            state.slowFilters.page = 1;
+            loadSlowQueries();
+        }
+
+        function slowPagePrev() {
+            if (state.slowFilters.page > 1) { state.slowFilters.page--; loadSlowQueries(); }
+        }
+        function slowPageNext() {
+            state.slowFilters.page++;
+            loadSlowQueries();
+        }
+
+        async function viewSlowDetail(id) {
+            try {
+                const data = await api(`/api/slow-queries/${id}`);
+                state.slowDetail = data.data.detail;
+                state.slowSubPage = 'detail';
+                renderSlowPage();
+            } catch (e) {
+                toast(`加载详情失败：${e.message}`, 'error');
+            }
+        }
+
+        function renderSlowPage_body() {} // 占位
+
+        function renderSlowDetailBody() {
+            const body = document.getElementById('slowDetailBody');
+            const sub = document.getElementById('slowDetailSubtitle');
+            const q = state.slowDetail;
+            if (!q) {
+                body.innerHTML = '<p class="muted" style="padding: 30px; text-align:center;">尚未选择慢查询 — 回到"慢查询列表"点击某行</p>';
+                if (sub) sub.textContent = '';
+                return;
+            }
+            sub.textContent = `ID #${q.id} · ${q.instance_name || '#' + q.instance_id}`;
+            body.innerHTML = `
+                <div class="detail-grid">
+                    <div>
+                        <table class="kv-table">
+                            <tr><th>实例</th><td>${escapeHtml(q.instance_name || ('#' + q.instance_id))} <span class="badge ${q.tc_product}">${escapeHtml(productLabel(q.tc_product))}</span></td></tr>
+                            <tr><th>TC 实例</th><td><code>${escapeHtml(q.tc_instance_id)}</code></td></tr>
+                            <tr><th>地域</th><td>${escapeHtml(q.tc_region)}</td></tr>
+                            <tr><th>数据库</th><td>${escapeHtml(q.database || '-')}</td></tr>
+                            <tr><th>用户@主机</th><td>${escapeHtml((q.user_name || '') + '@' + (q.user_host || ''))}</td></tr>
+                            <tr><th>时间</th><td>${escapeHtml(q.ts_iso)}</td></tr>
+                            <tr><th>执行时长</th><td><strong>${q.query_time_ms} ms</strong></td></tr>
+                            <tr><th>锁等待</th><td>${q.lock_time_ms} ms</td></tr>
+                            <tr><th>扫描行</th><td>${q.rows_examined}</td></tr>
+                            <tr><th>返回行</th><td>${q.rows_sent}</td></tr>
+                            <tr><th>指纹</th><td><code>${escapeHtml(q.fingerprint)}</code></td></tr>
+                        </table>
+                    </div>
+                    <div>
+                        <h4 style="margin:0 0 8px 0;">SQL 模板</h4>
+                        <div class="code-block" id="slowDetailTemplate">${escapeHtml(q.sql_template || '')}</div>
+                        <h4 style="margin:14px 0 8px 0;">原始 SQL</h4>
+                        <div class="code-block">${escapeHtml(q.sql_text || '')}</div>
+                    </div>
+                </div>
+                <h4 style="margin: 18px 0 8px 0;">同指纹历史（最近 50 条）</h4>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>时间</th><th>DB</th><th>用户@主机</th><th>执行 ms</th><th>扫描行</th></tr>
+                        </thead>
+                        <tbody id="slowHistoryTbody"></tbody>
+                    </table>
+                </div>
+                <h4 style="margin: 18px 0 8px 0;">EXPLAIN 结果</h4>
+                <div class="table-wrap" id="slowExplainResult"><p class="muted">点击右上角"执行 EXPLAIN"运行</p></div>
+            `;
+            loadSlowHistory(q.fingerprint);
+        }
+
+        async function loadSlowHistory(fp) {
+            // history 通过 /api/slow-queries/{id} 已返回，这里仅渲染
+            // 但我们没有全局 history 缓存；直接通过 detail 接口再取一次太重
+            // 改为用列表过滤接口拉
+            try {
+                const data = await api(`/api/slow-queries?fingerprint=${encodeURIComponent(fp)}&page=1&page_size=50`);
+                const rows = (data.data.items || []).filter(r => r.id !== (state.slowDetail && state.slowDetail.id));
+                const tbody = document.getElementById('slowHistoryTbody');
+                if (!tbody) return;
+                if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">无其他历史</td></tr>'; return; }
+                tbody.innerHTML = rows.map(r => `
+                    <tr>
+                        <td>${escapeHtml(r.ts_iso)}</td>
+                        <td>${escapeHtml(r.database || '-')}</td>
+                        <td>${escapeHtml((r.user_name || '') + '@' + (r.user_host || ''))}</td>
+                        <td>${r.query_time_ms}</td>
+                        <td>${r.rows_examined}</td>
+                    </tr>
+                `).join('');
+            } catch (e) { /* ignore */ }
+        }
+
+        function copySqlTemplate() {
+            const el = document.getElementById('slowDetailTemplate');
+            if (!el) { toast('没有可复制的模板', 'warning'); return; }
+            navigator.clipboard.writeText(el.textContent)
+                .then(() => toast('已复制', 'success'))
+                .catch(() => toast('复制失败', 'error'));
+        }
+
+        async function explainCurrentSlow() {
+            if (!state.slowDetail) { toast('请先选择一条慢查询', 'warning'); return; }
+            try {
+                toast('正在执行 EXPLAIN…', 'info');
+                const data = await api(`/api/slow-queries/${state.slowDetail.id}/explain`, { method: 'POST' });
+                const target = document.getElementById('slowExplainResult');
+                if (!data.success) {
+                    target.innerHTML = `<p class="muted" style="color:var(--red);">${escapeHtml(data.message)}</p>`;
+                    toast(data.message, 'error');
+                    return;
+                }
+                const cols = data.columns || [];
+                if (!cols.length) {
+                    target.innerHTML = `<p class="muted">${escapeHtml(data.message)}</p>`;
+                    return;
+                }
+                target.innerHTML = `
+                    <table>
+                        <thead><tr>${cols.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
+                        <tbody>${(data.rows || []).map(r => `<tr>${cols.map(c => `<td>${escapeHtml(r[c] ?? 'NULL')}</td>`).join('')}</tr>`).join('')}</tbody>
+                    </table>
+                `;
+                toast('EXPLAIN 完成', 'success');
+            } catch (e) {
+                toast(`EXPLAIN 失败：${e.message}`, 'error');
+            }
+        }
+
+        // ----- 统计 -----
+
+        function statsDateRange() {
+            const s = document.getElementById('slowStatsStart').value;
+            const e = document.getElementById('slowStatsEnd').value;
+            return {
+                start_ts: s ? Math.floor(new Date(s + 'T00:00:00').getTime() / 1000) : null,
+                end_ts: e ? Math.floor(new Date(e + 'T23:59:59').getTime() / 1000) : null,
+            };
+        }
+
+        async function loadSlowStats() {
+            try {
+                const { start_ts, end_ts } = statsDateRange();
+                const params = new URLSearchParams();
+                if (start_ts) params.set('start_ts', start_ts);
+                if (end_ts) params.set('end_ts', end_ts);
+                const [stats, ts, top] = await Promise.all([
+                    api(`/api/slow-queries/stats?${params}`),
+                    api(`/api/slow-queries/timeseries?${params}${params.toString() ? '&' : ''}bucket=hour`),
+                    api(`/api/slow-queries/top?${params}${params.toString() ? '&' : ''}limit=10`),
+                ]);
+                state.slowStats = stats.data;
+                renderSlowStats(ts.data.items || [], top.data.items || []);
+            } catch (e) {
+                toast(`统计加载失败：${e.message}`, 'error');
+            }
+        }
+
+        function renderSlowStats(timeRows, topRows) {
+            const s = state.slowStats || {};
+            const summary = document.getElementById('slowStatsSummary');
+            summary.textContent = `共 ${s.total || 0} 条 · 平均 ${s.avg_query_time_ms || 0} ms · P95 ${s.p95_query_time_ms || 0} ms · 最大 ${s.max_query_time_ms || 0} ms`;
+
+            // Top 10 横向柱图
+            const topEl = document.getElementById('slowChartTop');
+            if (!window.echarts) { topEl.textContent = 'ECharts 未加载'; return; }
+            if (slowChartInstances.top) slowChartInstances.top.dispose();
+            slowChartInstances.top = echarts.init(topEl);
+            const topData = (topRows.length ? topRows : (s.top_fingerprints || []));
+            const tplLabels = topData.map(r => truncate(r.sql_template, 40));
+            const tplValues = topData.map(r => r.avg_query_time_ms);
+            slowChartInstances.top.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                grid: { left: 220, right: 30, top: 20, bottom: 30 },
+                xAxis: { type: 'value', name: 'avg ms' },
+                yAxis: { type: 'category', data: tplLabels.reverse(), axisLabel: { fontSize: 11 } },
+                series: [{
+                    type: 'bar',
+                    data: tplValues.reverse(),
+                    itemStyle: { color: '#0f8f8c' },
+                    label: { show: true, position: 'right', formatter: '{c} ms' }
+                }],
+            });
+
+            // DB 分布饼图
+            const dbEl = document.getElementById('slowChartDb');
+            if (slowChartInstances.db) slowChartInstances.db.dispose();
+            slowChartInstances.db = echarts.init(dbEl);
+            const dbData = Object.entries(s.by_database || {}).map(([name, value]) => ({ name, value }));
+            slowChartInstances.db.setOption({
+                tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                legend: { bottom: 0, type: 'scroll' },
+                series: [{
+                    type: 'pie', radius: ['30%', '60%'], center: ['50%', '45%'],
+                    data: dbData,
+                    label: { formatter: '{b}\n{c}' },
+                }],
+            });
+
+            // 时序
+            const timeEl = document.getElementById('slowChartTime');
+            if (slowChartInstances.time) slowChartInstances.time.dispose();
+            slowChartInstances.time = echarts.init(timeEl);
+            const xData = timeRows.map(r => formatLocalMinute(r.bucket_ts));
+            const counts = timeRows.map(r => r.count);
+            const avgs = timeRows.map(r => r.avg_query_time_ms);
+            slowChartInstances.time.setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['条数', 'avg ms'] },
+                grid: { left: 60, right: 60, top: 30, bottom: 30 },
+                xAxis: { type: 'category', data: xData, axisLabel: { rotate: 30, fontSize: 10 } },
+                yAxis: [
+                    { type: 'value', name: '条数', position: 'left' },
+                    { type: 'value', name: 'avg ms', position: 'right' },
+                ],
+                series: [
+                    { name: '条数', type: 'bar', data: counts, itemStyle: { color: '#1e6dff' } },
+                    { name: 'avg ms', type: 'line', yAxisIndex: 1, data: avgs, smooth: true, itemStyle: { color: '#b97812' } },
+                ],
+            });
+
+            window.addEventListener('resize', resizeSlowCharts);
+        }
+
+        function resizeSlowCharts() {
+            Object.values(slowChartInstances).forEach(c => c && c.resize());
+        }
+
+        function truncate(s, n) {
+            if (!s) return '';
+            return s.length > n ? s.slice(0, n) + '…' : s;
+        }
+
+        function formatLocalMinute(ts) {
+            const d = new Date(ts * 1000);
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        refreshAll();
+    </script>
+</body>
+</html>
