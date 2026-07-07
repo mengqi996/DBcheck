@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 腾讯云 OpenAPI 慢日志客户端
 

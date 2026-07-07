@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """腾讯云 binlog 查询与下载地址获取。"""
 
 from datetime import datetime, timedelta

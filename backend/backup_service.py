@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """腾讯云备份：发起云端备份任务，并同步备份元数据到本地。"""
 
 from datetime import datetime

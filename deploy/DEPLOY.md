@@ -19,22 +19,46 @@
 
 ## 1. 服务器准备
 
+CentOS / RHEL / Rocky / AlmaLinux 8+:
+
 ```bash
 # 一次性包
 sudo dnf install -y git rsync python3.11 python3.11-pip
-
-# 如果用 firewalld
-sudo systemctl enable --now firewalld
 ```
 
-如果服务器默认 `python3` 是 3.6,不要替换系统 Python。安装一个新版本后指定给安装脚本:
+CentOS / RHEL 7 如果 yum 源里没有 `python3.11`,优先走 SCL 安装 Python 3.8:
+
+```bash
+sudo yum install -y centos-release-scl
+sudo yum install -y rh-python38 rh-python38-python-pip git rsync
+```
+
+如果 `centos-release-scl` 不存在,先启用 EPEL:
+
+```bash
+sudo yum install -y epel-release
+sudo yum install -y python38 python38-pip git rsync
+```
+
+不要替换系统默认 Python。安装新版本后指定给安装脚本:
 
 ```bash
 cd /opt/dbcheck/deploy
-sudo PYTHON_BIN=python3.11 ./install.sh
+
+# SCL 安装的 Python:
+sudo PYTHON_BIN=/opt/rh/rh-python38/root/usr/bin/python3.8 ./install.sh
+
+# EPEL 安装的 Python:
+sudo PYTHON_BIN=python3.8 ./install.sh
 ```
 
 安装脚本也会自动尝试识别 `python3.12` / `python3.11` / `python3.10` / `python3.9` / `python3.8`。
+
+如果用 firewalld:
+
+```bash
+sudo systemctl enable --now firewalld
+```
 
 ---
 

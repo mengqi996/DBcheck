@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 """
 慢 SQL 业务逻辑：拉取 → 归一化 → 去重入库 → 更新同步状态
 
