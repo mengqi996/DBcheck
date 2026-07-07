@@ -51,3 +51,9 @@ logs/
 run/
 .env
 !.env.example
+
+# Production install.sh creates these under /opt/dbcheck when the repo is
+# cloned there. data/ can contain dbcheck.db and .fernet_key, so keep it out.
+/app/
+/data/
+/venv/
