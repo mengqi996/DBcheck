@@ -18,6 +18,7 @@ APP_GROUP="dbcheck"
 APP_DIR="/opt/${APP_NAME}"
 PYTHON_MIN_MAJOR=3
 PYTHON_MIN_MINOR=8
+PYTHON_BIN="${PYTHON_BIN:-}"
 
 # ============================================================
 # Pre-flight
@@ -27,16 +28,39 @@ if [[ ${EUID} -ne 0 ]]; then
     exit 1
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo ">>> Installing python3 ..."
-    dnf install -y python3 python3-pip python3-venv
-fi
+find_python() {
+    local candidate
 
-PY_VER="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
-if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (${PYTHON_MIN_MAJOR}, ${PYTHON_MIN_MINOR}) else 1)"; then
-    echo "ERROR: Python >= ${PYTHON_MIN_MAJOR}.${PYTHON_MIN_MINOR} required, found ${PY_VER}" >&2
+    if [[ -n "${PYTHON_BIN}" ]]; then
+        command -v "${PYTHON_BIN}" >/dev/null 2>&1 || return 1
+        command -v "${PYTHON_BIN}"
+        return 0
+    fi
+
+    for candidate in python3.12 python3.11 python3.10 python3.9 python3.8 python3; do
+        if command -v "${candidate}" >/dev/null 2>&1; then
+            command -v "${candidate}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+if ! PYTHON_BIN="$(find_python)"; then
+    echo "ERROR: Python >= ${PYTHON_MIN_MAJOR}.${PYTHON_MIN_MINOR} is required, but no python3 executable was found." >&2
+    echo "Install Python 3.8+ first, then rerun with PYTHON_BIN=python3.11 ./install.sh if needed." >&2
     exit 1
 fi
+
+PY_VER="$("${PYTHON_BIN}" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+if ! "${PYTHON_BIN}" -c "import sys; sys.exit(0 if sys.version_info >= (${PYTHON_MIN_MAJOR}, ${PYTHON_MIN_MINOR}) else 1)"; then
+    echo "ERROR: Python >= ${PYTHON_MIN_MAJOR}.${PYTHON_MIN_MINOR} required, found ${PY_VER} at $(command -v "${PYTHON_BIN}")" >&2
+    echo "Install a newer Python and rerun, for example: PYTHON_BIN=python3.11 ./install.sh" >&2
+    exit 1
+fi
+
+echo ">>> Using Python ${PY_VER}: $(command -v "${PYTHON_BIN}")"
 
 # ============================================================
 # Resolve source code path
@@ -94,7 +118,7 @@ install -m 644 -o "${APP_USER}" -g "${APP_GROUP}" \
 # Python venv + dependencies
 # ============================================================
 echo ">>> Creating Python venv ..."
-sudo -u "${APP_USER}" python3 -m venv "${APP_DIR}/venv"
+sudo -u "${APP_USER}" "${PYTHON_BIN}" -m venv "${APP_DIR}/venv"
 
 echo ">>> Installing requirements (this may take a minute) ..."
 sudo -u "${APP_USER}" "${APP_DIR}/venv/bin/pip" install --quiet --upgrade pip wheel

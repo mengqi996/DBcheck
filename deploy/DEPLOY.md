@@ -21,11 +21,20 @@
 
 ```bash
 # 一次性包
-sudo dnf install -y python3 python3-pip python3-venv rsync
+sudo dnf install -y git rsync python3.11 python3.11-pip
 
 # 如果用 firewalld
 sudo systemctl enable --now firewalld
 ```
+
+如果服务器默认 `python3` 是 3.6,不要替换系统 Python。安装一个新版本后指定给安装脚本:
+
+```bash
+cd /opt/dbcheck/deploy
+sudo PYTHON_BIN=python3.11 ./install.sh
+```
+
+安装脚本也会自动尝试识别 `python3.12` / `python3.11` / `python3.10` / `python3.9` / `python3.8`。
 
 ---
 
@@ -64,6 +73,9 @@ sudo chown -R root:root /opt/dbcheck
 ssh user@server
 cd /opt/dbcheck/deploy
 sudo ./install.sh
+
+# 如果默认 python3 小于 3.8,改用服务器上的新 Python:
+sudo PYTHON_BIN=python3.11 ./install.sh
 ```
 
 install.sh 会做这些事:
