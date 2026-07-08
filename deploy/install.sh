@@ -104,8 +104,15 @@ install -d -m 755 -o "${APP_USER}" -g "${APP_GROUP}" "${APP_DIR}/venv"
 # Copy code
 # ============================================================
 echo ">>> Copying backend code to ${APP_DIR}/app/ ..."
-# rsync without --delete so we don't accidentally wipe data/ inside app/
-rsync -a --exclude='venv' --exclude='__pycache__' --exclude='*.pyc' \
+# rsync without --delete so we don't accidentally wipe files in app/. Runtime
+# data and encryption keys must live in ${APP_DIR}/data, not in app/.
+rsync -a \
+    --exclude='venv' \
+    --exclude='__pycache__' \
+    --exclude='*.pyc' \
+    --exclude='dbcheck.db' \
+    --exclude='dbcheck.db-journal' \
+    --exclude='.fernet_key' \
     "${BACKEND_SRC}/" "${APP_DIR}/app/"
 chown -R "${APP_USER}:${APP_GROUP}" "${APP_DIR}/app"
 chmod 750 "${APP_DIR}/app"
@@ -140,6 +147,20 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     install -m 640 -o "${APP_USER}" -g "${APP_GROUP}" \
         "${SCRIPT_DIR}/${APP_NAME}.env.example" "${ENV_FILE}"
 fi
+
+ensure_env_var() {
+    local name="$1"
+    local value="$2"
+    if ! grep -Eq "^[[:space:]]*${name}=" "${ENV_FILE}"; then
+        echo ">>> Adding ${name} to ${ENV_FILE} ..."
+        printf '\n%s=%s\n' "${name}" "${value}" >> "${ENV_FILE}"
+    fi
+}
+
+ensure_env_var "DBCHECK_SQLITE_PATH" "${APP_DIR}/data/dbcheck.db"
+ensure_env_var "DBCHECK_FERNET_KEY_FILE" "${APP_DIR}/data/.fernet_key"
+chown "${APP_USER}:${APP_GROUP}" "${ENV_FILE}"
+chmod 640 "${ENV_FILE}"
 
 # ============================================================
 # systemd unit

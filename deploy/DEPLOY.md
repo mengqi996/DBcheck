@@ -214,6 +214,10 @@ sudo vi /opt/dbcheck/.env
 开关含义和推荐写法:
 
 ```env
+# SQLite 数据库和 Fernet 密钥必须放在持久化 data 目录
+DBCHECK_SQLITE_PATH=/opt/dbcheck/data/dbcheck.db
+DBCHECK_FERNET_KEY_FILE=/opt/dbcheck/data/.fernet_key
+
 # 腾讯云 API 总开关,控制备份同步、慢 SQL 同步、监控、binlog 等所有主动云 API
 DBCHECK_TENCENT_API_ENABLED=true
 
@@ -254,6 +258,7 @@ curl -s http://127.0.0.1:8000/api/scheduler/status
 | 端口没起 | `sudo ss -tlnp | grep 8000` |
 | 页面 502 | 后端没起或挂了 |
 | 页面 404 | 浏览器没带路径,直访 `http://server:8000/`(不是 `/index.html`) |
+| 重启后数据像丢了 | 检查 `/opt/dbcheck/.env` 是否启用 `DBCHECK_SQLITE_PATH=/opt/dbcheck/data/dbcheck.db`,并确认真实数据在这个文件里 |
 | TC 接口 403 | 检查进程环境里 `DBCHECK_TENCENT_API_ENABLED=true` 是否生效 |
 | 登录凭证失效 | `.fernet_key` 跟当初加密的不是同一个,需要重录凭证 |
 | 慢查询拿不到 | 需要 `DBCHECK_TENCENT_API_ENABLED=true` 和 `DBCHECK_SCHEDULER_ENABLED=true`,且绑定已启用 |

@@ -294,10 +294,11 @@ def update_instance(instance_id: int, payload: Dict[str, Any]) -> Optional[Dict[
         "owner": "owner",
         "remark": "remark",
     }
+    nullable_fields = {"username", "password", "database", "version", "owner", "remark"}
     updates = []
     params: List[Any] = []
     for source, column in field_map.items():
-        if source in payload and payload[source] is not None:
+        if source in payload and (payload[source] is not None or source in nullable_fields):
             updates.append(f"{column} = ?")
             params.append(payload[source])
 

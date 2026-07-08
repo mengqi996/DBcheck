@@ -5,7 +5,8 @@ DBCheck 凭证加密模块
 基于 cryptography.Fernet 做对称加密，SecretKey 入库前加密。
 主密钥优先级：
     1. 环境变量 DBCHECK_FERNET_MATERIAL（任意字符串，先 SHA256 再 base64-urlsafe 派生）
-    2. backend/.fernet_key 文件（首次启动生成，权限 0600）
+    2. DBCHECK_FERNET_KEY_FILE 指向的 key 文件
+    3. backend/.fernet_key 文件（首次启动生成，权限 0600）
 """
 
 import base64
@@ -16,7 +17,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet, InvalidToken
 
 
-KEY_PATH = Path(__file__).parent / ".fernet_key"
+KEY_PATH = Path(os.getenv("DBCHECK_FERNET_KEY_FILE", Path(__file__).parent / ".fernet_key"))
 ENV_MATERIAL = "DBCHECK_FERNET_MATERIAL"
 
 
@@ -36,6 +37,7 @@ def _get_fernet() -> Fernet:
 
     # 首次启动：生成随机 key 并落盘（0600 权限）
     key = Fernet.generate_key()
+    KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
     KEY_PATH.write_bytes(key)
     try:
         os.chmod(KEY_PATH, 0o600)

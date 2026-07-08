@@ -47,6 +47,14 @@ backend/dbcheck.db
 
 这是 SQLite 数据库文件，里面保存实例、备份和检测日志。
 
+生产环境建议固定到 `/opt/dbcheck/data`，避免服务重启或代码更新时读到
+`/opt/dbcheck/app` 下的临时/旧数据库：
+
+```env
+DBCHECK_SQLITE_PATH=/opt/dbcheck/data/dbcheck.db
+DBCHECK_FERNET_KEY_FILE=/opt/dbcheck/data/.fernet_key
+```
+
 腾讯云主动调用开关：
 
 - `DBCHECK_TENCENT_API_ENABLED=true`：腾讯云 API 总开关，关闭后不会主动调用腾讯云。
