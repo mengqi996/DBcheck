@@ -11,6 +11,7 @@ asyncio.to_thread 包装以避免阻塞事件循环。
 import time
 import hashlib
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -28,6 +29,10 @@ END_LAG_SECONDS = 60
 SELF_HOSTED_MIN_QUERY_TIME_MS = max(0, int(os.getenv("DBCHECK_SELF_HOSTED_SLOW_MIN_MS", "1000")))
 SELF_HOSTED_FETCH_LIMIT = max(1, int(os.getenv("DBCHECK_SELF_HOSTED_SLOW_LIMIT", "200")))
 SELF_HOSTED_CONNECT_TIMEOUT = max(1, int(os.getenv("DBCHECK_SELF_HOSTED_CONNECT_TIMEOUT", "5")))
+SELF_HOSTED_SLOW_LOG_FILE_MAX_BYTES = max(
+    64 * 1024,
+    int(os.getenv("DBCHECK_SELF_HOSTED_SLOW_LOG_FILE_MAX_BYTES", str(5 * 1024 * 1024))),
+)
 SELF_HOSTED_PG_BUCKET_SECONDS = max(
     60,
     int(os.getenv("DBCHECK_SELF_HOSTED_PG_BUCKET_SECONDS", "3600")),
@@ -321,6 +326,178 @@ def _fetch_mysql_slow_log(conn: Any, start_ts: int) -> List[Dict[str, Any]]:
     ]
 
 
+def _parse_mysql_time(value: str) -> Optional[int]:
+    value = value.strip()
+    if not value:
+        return None
+
+    try:
+        if "T" in value:
+            normalized = value.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(normalized)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return int(dt.timestamp())
+    except ValueError:
+        pass
+
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%y%m%d %H:%M:%S"):
+        try:
+            return int(datetime.strptime(value, fmt).replace(tzinfo=timezone.utc).timestamp())
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_mysql_user_host(line: str) -> tuple[Optional[str], Optional[str]]:
+    body = line.split(":", 1)[1].strip() if ":" in line else line.strip()
+    user_name = body.split("[", 1)[0].strip() or None
+    user_host = None
+    if "@" in body:
+        host_part = body.split("@", 1)[1].strip()
+        host_match = re.search(r"\[([^\]]*)\]", host_part)
+        if host_match and host_match.group(1).strip():
+            user_host = host_match.group(1).strip()
+        else:
+            user_host = host_part.split("Id:", 1)[0].strip() or None
+    return user_name, user_host
+
+
+def _clean_mysql_use_database(line: str) -> Optional[str]:
+    item = line.strip().rstrip(";").strip()
+    if not item.lower().startswith("use "):
+        return None
+    database = item[4:].strip()
+    if database.startswith("`") and database.endswith("`"):
+        database = database[1:-1]
+    return database or None
+
+
+def _parse_mysql_slow_log_content(content: str, start_ts: int) -> List[Dict[str, Any]]:
+    query_re = re.compile(
+        r"Query_time:\s*([0-9.]+)\s+Lock_time:\s*([0-9.]+)\s+"
+        r"Rows_sent:\s*(\d+)\s+Rows_examined:\s*(\d+)",
+        re.IGNORECASE,
+    )
+    timestamp_re = re.compile(r"SET\s+timestamp\s*=\s*(\d+)", re.IGNORECASE)
+    schema_re = re.compile(r"^#\s*Schema:\s*(\S+)", re.IGNORECASE)
+
+    rows: List[Dict[str, Any]] = []
+    current: Optional[Dict[str, Any]] = None
+
+    def finish_current() -> None:
+        nonlocal current
+        if not current:
+            return
+        sql_text = "\n".join(current.get("sql_lines") or []).strip()
+        if not sql_text:
+            current = None
+            return
+        ts = int(current.get("ts") or 0)
+        if not ts or ts < start_ts:
+            current = None
+            return
+        query_time_ms = _ms(current.get("query_time_ms"))
+        if query_time_ms < SELF_HOSTED_MIN_QUERY_TIME_MS:
+            current = None
+            return
+        rows.append(
+            {
+                "database": current.get("database"),
+                "user_name": current.get("user_name"),
+                "user_host": current.get("user_host"),
+                "sql_text": sql_text,
+                "query_time_ms": query_time_ms,
+                "lock_time_ms": _ms(current.get("lock_time_ms")),
+                "rows_examined": int(current.get("rows_examined") or 0),
+                "rows_sent": int(current.get("rows_sent") or 0),
+                "ts": ts,
+                "ts_iso": _utc_iso_from_ts(ts),
+                "signature": _hash_signature(
+                    "mysql.slow_log_file",
+                    ts,
+                    current.get("user_host"),
+                    query_time_ms,
+                    sql_text,
+                ),
+            }
+        )
+        current = None
+
+    for raw_line in content.splitlines():
+        line = raw_line.rstrip("\n")
+        if line.startswith("# Time:"):
+            finish_current()
+            current = {"sql_lines": [], "ts": _parse_mysql_time(line.split(":", 1)[1].strip())}
+            continue
+        if current is None:
+            continue
+
+        if line.startswith("# User@Host:"):
+            user_name, user_host = _parse_mysql_user_host(line)
+            current["user_name"] = user_name
+            current["user_host"] = user_host
+            continue
+
+        if line.startswith("# Query_time:"):
+            match = query_re.search(line)
+            if match:
+                current["query_time_ms"] = float(match.group(1)) * 1000
+                current["lock_time_ms"] = float(match.group(2)) * 1000
+                current["rows_sent"] = int(match.group(3))
+                current["rows_examined"] = int(match.group(4))
+            continue
+
+        schema_match = schema_re.match(line)
+        if schema_match and schema_match.group(1) != "":
+            current["database"] = schema_match.group(1)
+            continue
+
+        timestamp_match = timestamp_re.search(line)
+        if timestamp_match:
+            current["ts"] = int(timestamp_match.group(1))
+            continue
+
+        database = _clean_mysql_use_database(line)
+        if database:
+            current["database"] = database
+            continue
+
+        if line.startswith("#") or not line.strip():
+            continue
+        current.setdefault("sql_lines", []).append(line)
+
+    finish_current()
+    rows.sort(key=lambda item: int(item.get("ts") or 0), reverse=True)
+    return rows[:SELF_HOSTED_FETCH_LIMIT]
+
+
+def _fetch_mysql_slow_log_file(conn: Any, start_ts: int) -> tuple[List[Dict[str, Any]], str]:
+    sql = """
+        SELECT
+            @@global.slow_query_log_file AS log_file,
+            @@global.log_output AS log_output,
+            @@global.slow_query_log AS slow_query_log,
+            RIGHT(LOAD_FILE(@@global.slow_query_log_file), %s) AS content
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, (SELF_HOSTED_SLOW_LOG_FILE_MAX_BYTES,))
+        row = cur.fetchone() or {}
+
+    log_file = row.get("log_file") or "unknown"
+    content = row.get("content")
+    if isinstance(content, bytes):
+        content = content.decode("utf-8", errors="replace")
+    if not content:
+        raise RuntimeError(
+            "LOAD_FILE(@@global.slow_query_log_file) 返回空；"
+            "需要 MySQL 账号具备 FILE 权限，且 slow_query_log_file 可被 mysqld 读取"
+        )
+
+    rows = _parse_mysql_slow_log_content(str(content), start_ts)
+    return rows, f"mysql.slow_log_file:{log_file}"
+
+
 def _fetch_mysql_performance_schema(conn: Any, start_ts: int) -> List[Dict[str, Any]]:
     sql = """
         SELECT
@@ -372,6 +549,8 @@ def _fetch_mysql_performance_schema(conn: Any, start_ts: int) -> List[Dict[str, 
 
 def _fetch_self_hosted_mysql(instance: Dict[str, Any], start_ts: int) -> tuple[List[Dict[str, Any]], str]:
     slow_log_error: Optional[str] = None
+    slow_file_error: Optional[str] = None
+    slow_file_source: Optional[str] = None
     conn = _connect_mysql(instance)
     try:
         try:
@@ -381,10 +560,24 @@ def _fetch_self_hosted_mysql(instance: Dict[str, Any], start_ts: int) -> tuple[L
         except Exception as exc:  # noqa: BLE001
             slow_log_error = f"{type(exc).__name__}: {exc}"
 
+        try:
+            rows, slow_file_source = _fetch_mysql_slow_log_file(conn, start_ts)
+            if rows:
+                return rows, slow_file_source
+        except Exception as exc:  # noqa: BLE001
+            slow_file_error = f"{type(exc).__name__}: {exc}"
+
         rows = _fetch_mysql_performance_schema(conn, start_ts)
         source = "performance_schema.events_statements_summary_by_digest"
+        if not rows and slow_file_source:
+            source = slow_file_source
+        errors = []
         if slow_log_error:
-            source = f"{source}（slow_log 不可用：{slow_log_error}）"
+            errors.append(f"slow_log 表不可用：{slow_log_error}")
+        if slow_file_error:
+            errors.append(f"slow_log 文件不可用：{slow_file_error}")
+        if errors:
+            source = f"{source}（{'；'.join(errors)}）"
         return rows, source
     finally:
         conn.close()

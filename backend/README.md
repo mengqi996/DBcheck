@@ -58,9 +58,11 @@ backend/dbcheck.db
 - `DBCHECK_SELF_HOSTED_SLOW_MIN_MS=1000`：只采集最大执行耗时不低于该阈值的记录/摘要。
 - `DBCHECK_SELF_HOSTED_SLOW_LIMIT=200`：单实例单次最多采集条数。
 - `DBCHECK_SELF_HOSTED_CONNECT_TIMEOUT=5`：自建库采集连接超时秒数。
+- `DBCHECK_SELF_HOSTED_SLOW_LOG_FILE_MAX_BYTES=5242880`：读取 MySQL 慢日志文件尾部最大字节数。
 
-自建 MySQL 优先读取 `mysql.slow_log`，无数据或不可用时读取
-`performance_schema.events_statements_summary_by_digest`。自建 PostgreSQL 读取
+自建 MySQL 按顺序读取 `mysql.slow_log`、`LOAD_FILE(@@global.slow_query_log_file)`、
+`performance_schema.events_statements_summary_by_digest`。文件读取需要 MySQL 账号具备
+`FILE` 权限，且 `mysqld` 能读取 `slow_query_log_file` 指向的文件。自建 PostgreSQL 读取
 `pg_stat_statements`。如果数据库侧没有开启这些统计/日志，接口会正常返回 0 条。
 
 示例：
