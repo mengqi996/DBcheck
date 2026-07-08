@@ -2193,7 +2193,14 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8000';
+        const API_BASE = (() => {
+            if (window.DBCHECK_API_BASE) return window.DBCHECK_API_BASE.replace(/\/$/, '');
+            if (window.location.protocol === 'file:') return 'http://localhost:8000';
+            if (window.location.port === '8080') {
+                return `${window.location.protocol}//${window.location.hostname}:8000`;
+            }
+            return '';
+        })();
         const BACKUP_AUTO_SYNC_MS = 60000;
         const BACKUP_CREATE_POLL_MS = 30000;
         const BACKUP_CREATE_POLL_MAX = 20;
