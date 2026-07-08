@@ -17,6 +17,9 @@ from typing import Any, Dict, List, Optional
 DB_PATH = Path(os.getenv("DBCHECK_SQLITE_PATH", Path(__file__).with_name("dbcheck.db")))
 SECONDS_PER_DAY = 86400
 SLOW_QUERY_RETENTION_DAYS = max(1, int(os.getenv("DBCHECK_SLOW_QUERY_RETENTION_DAYS", "3")))
+SELF_HOSTED_CREDENTIAL_NAME = "__dbcheck_self_hosted__"
+SELF_HOSTED_REGION = "self-hosted"
+SELF_HOSTED_PRODUCTS = {"self_mysql", "self_postgresql"}
 
 
 def now() -> str:
@@ -843,7 +846,12 @@ def purge_old_slow_queries(retention_days: Optional[int] = None) -> int:
 def list_credentials() -> List[Dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM tencent_credentials ORDER BY is_default DESC, id"
+            """
+            SELECT * FROM tencent_credentials
+            WHERE name != ?
+            ORDER BY is_default DESC, id
+            """,
+            (SELF_HOSTED_CREDENTIAL_NAME,),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -947,7 +955,9 @@ def get_decrypted_secret_key(credential_id: int) -> Optional[str]:
 # ========== 绑定 CRUD ==========
 
 def list_bindings(
-    instance_id: Optional[int] = None, enabled_only: bool = False
+    instance_id: Optional[int] = None,
+    enabled_only: bool = False,
+    include_self_hosted: bool = False,
 ) -> List[Dict[str, Any]]:
     clauses: List[str] = []
     params: List[Any] = []
@@ -956,6 +966,8 @@ def list_bindings(
         params.append(instance_id)
     if enabled_only:
         clauses.append("b.enabled = 1")
+    if not include_self_hosted:
+        clauses.append("b.tc_product NOT LIKE 'self_%'")
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     sql = f"""
@@ -971,6 +983,38 @@ def list_bindings(
     with get_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_self_hosted_slow_instances(
+    instance_id: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """返回适合直接连库采集慢 SQL 的自建 MySQL/PostgreSQL 实例。"""
+    clauses = ["i.db_type IN ('MySQL', 'PostgreSQL')"]
+    params: List[Any] = []
+    if instance_id is not None:
+        clauses.append("i.id = ?")
+        params.append(instance_id)
+    clauses.append(
+        """
+        NOT EXISTS (
+            SELECT 1
+            FROM instance_tc_bindings b
+            WHERE b.instance_id = i.id
+              AND b.tc_product NOT LIKE 'self_%'
+        )
+        """
+    )
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT i.*
+            FROM instances i
+            WHERE {' AND '.join(clauses)}
+            ORDER BY i.id
+            """,
+            params,
+        ).fetchall()
+    return [internal_instance(row) for row in rows]
 
 
 def get_binding(binding_id: int) -> Optional[Dict[str, Any]]:
@@ -1012,6 +1056,85 @@ def create_binding(payload: Dict[str, Any]) -> Dict[str, Any]:
             ),
         )
         binding_id = cursor.lastrowid
+    binding = get_binding(binding_id)
+    assert binding is not None
+    return binding
+
+
+def _ensure_self_hosted_credential(conn: sqlite3.Connection) -> int:
+    row = conn.execute(
+        "SELECT id FROM tencent_credentials WHERE name = ?",
+        (SELF_HOSTED_CREDENTIAL_NAME,),
+    ).fetchone()
+    if row:
+        return int(row["id"])
+
+    ts = now()
+    cursor = conn.execute(
+        """
+        INSERT INTO tencent_credentials (
+            name, secret_id, secret_key_enc, endpoint_suffix,
+            is_default, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 0, ?, ?)
+        """,
+        (
+            SELF_HOSTED_CREDENTIAL_NAME,
+            "self-hosted",
+            "not-used",
+            "local",
+            ts,
+            ts,
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def get_or_create_self_hosted_binding(instance_id: int, product: str) -> Dict[str, Any]:
+    if product not in SELF_HOSTED_PRODUCTS:
+        raise ValueError(f"unsupported self-hosted product: {product}")
+
+    ts = now()
+    tc_instance_id = f"self:{instance_id}"
+    with get_connection() as conn:
+        instance = conn.execute(
+            "SELECT id FROM instances WHERE id = ?", (instance_id,)
+        ).fetchone()
+        if not instance:
+            raise ValueError("实例不存在")
+
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM instance_tc_bindings
+            WHERE instance_id = ?
+              AND tc_product = ?
+              AND tc_instance_id = ?
+            """,
+            (instance_id, product, tc_instance_id),
+        ).fetchone()
+        if existing:
+            binding_id = int(existing["id"])
+        else:
+            credential_id = _ensure_self_hosted_credential(conn)
+            cursor = conn.execute(
+                """
+                INSERT INTO instance_tc_bindings (
+                    instance_id, tc_product, tc_instance_id, tc_region,
+                    credential_id, enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    instance_id,
+                    product,
+                    tc_instance_id,
+                    SELF_HOSTED_REGION,
+                    credential_id,
+                    ts,
+                    ts,
+                ),
+            )
+            binding_id = int(cursor.lastrowid)
+
     binding = get_binding(binding_id)
     assert binding is not None
     return binding
@@ -1498,9 +1621,16 @@ def top_slow_fingerprints(
 def binding_poll_status_snapshot() -> Dict[str, int]:
     """统计当前 binding 数 / 启用数 / 失败 binding 数。"""
     with get_connection() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM instance_tc_bindings").fetchone()[0]
+        total = conn.execute(
+            "SELECT COUNT(*) FROM instance_tc_bindings WHERE tc_product NOT LIKE 'self_%'"
+        ).fetchone()[0]
         enabled = conn.execute(
-            "SELECT COUNT(*) FROM instance_tc_bindings WHERE enabled = 1"
+            """
+            SELECT COUNT(*)
+            FROM instance_tc_bindings
+            WHERE enabled = 1
+              AND tc_product NOT LIKE 'self_%'
+            """
         ).fetchone()[0]
         failing = conn.execute(
             """
@@ -1508,6 +1638,7 @@ def binding_poll_status_snapshot() -> Dict[str, int]:
             FROM slow_query_sync_state s
             JOIN instance_tc_bindings b ON b.id = s.binding_id
             WHERE s.consecutive_failures > 0
+              AND b.tc_product NOT LIKE 'self_%'
             """
         ).fetchone()[0]
     return {"total": total, "enabled": enabled, "failing": failing}

@@ -9,6 +9,8 @@ asyncio.to_thread 包装以避免阻塞事件循环。
 """
 
 import time
+import hashlib
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -23,6 +25,17 @@ RETENTION_WINDOW_SECONDS = storage.SLOW_QUERY_RETENTION_DAYS * storage.SECONDS_P
 MAX_WINDOW_SECONDS = min(TC_MAX_WINDOW_SECONDS, RETENTION_WINDOW_SECONDS)
 # 慢日志在 TC 端可能有最多 ~60s 延迟，所以 end_ts 比当前时间提前 60s
 END_LAG_SECONDS = 60
+SELF_HOSTED_MIN_QUERY_TIME_MS = max(0, int(os.getenv("DBCHECK_SELF_HOSTED_SLOW_MIN_MS", "1000")))
+SELF_HOSTED_FETCH_LIMIT = max(1, int(os.getenv("DBCHECK_SELF_HOSTED_SLOW_LIMIT", "200")))
+SELF_HOSTED_CONNECT_TIMEOUT = max(1, int(os.getenv("DBCHECK_SELF_HOSTED_CONNECT_TIMEOUT", "5")))
+SELF_HOSTED_PG_BUCKET_SECONDS = max(
+    60,
+    int(os.getenv("DBCHECK_SELF_HOSTED_PG_BUCKET_SECONDS", "3600")),
+)
+SELF_HOSTED_PRODUCT_BY_DB_TYPE = {
+    "MySQL": "self_mysql",
+    "PostgreSQL": "self_postgresql",
+}
 
 
 def _utc_now_ts() -> int:
@@ -197,6 +210,353 @@ def poll_all_enabled() -> List[Dict[str, Any]]:
     results = [poll_one_binding(b) for b in bindings]
     storage.purge_old_slow_queries()
     return results
+
+
+def _ms(value: Any) -> int:
+    try:
+        return max(0, int(round(float(value or 0))))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _hash_signature(*parts: Any) -> str:
+    raw = "|".join("" if p is None else str(p) for p in parts)
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def _utc_iso_from_ts(ts: int) -> str:
+    return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _normalize_self_hosted_rows(
+    raw_rows: List[Dict[str, Any]],
+    binding: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for r in raw_rows:
+        sql_text = (r.get("sql_text") or "").strip()
+        if not sql_text:
+            continue
+        template, fp = normalize(sql_text)
+        rows.append(
+            {
+                "binding_id": binding["id"],
+                "instance_id": binding["instance_id"],
+                "tc_product": binding["tc_product"],
+                "tc_instance_id": binding["tc_instance_id"],
+                "tc_region": binding["tc_region"],
+                "database": r.get("database"),
+                "user_name": r.get("user_name"),
+                "user_host": r.get("user_host"),
+                "sql_text": sql_text,
+                "sql_template": template,
+                "fingerprint": fp,
+                "tc_md5": r.get("signature") or _hash_signature(fp, r.get("ts")),
+                "query_time_ms": _ms(r.get("query_time_ms")),
+                "lock_time_ms": _ms(r.get("lock_time_ms")),
+                "rows_examined": int(r.get("rows_examined") or 0),
+                "rows_sent": int(r.get("rows_sent") or 0),
+                "ts": int(r.get("ts") or _utc_now_ts()),
+                "ts_iso": r.get("ts_iso") or _utc_iso_from_ts(int(r.get("ts") or _utc_now_ts())),
+            }
+        )
+    return rows
+
+
+def _connect_mysql(instance: Dict[str, Any]):
+    import pymysql
+
+    return pymysql.connect(
+        host=instance["host"],
+        port=int(instance["port"]),
+        user=instance.get("username") or "root",
+        password=instance.get("password") or "",
+        database=instance.get("database") or None,
+        connect_timeout=SELF_HOSTED_CONNECT_TIMEOUT,
+        read_timeout=max(SELF_HOSTED_CONNECT_TIMEOUT, 10),
+        write_timeout=max(SELF_HOSTED_CONNECT_TIMEOUT, 10),
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+def _fetch_mysql_slow_log(conn: Any, start_ts: int) -> List[Dict[str, Any]]:
+    sql = """
+        SELECT
+            UNIX_TIMESTAMP(start_time) AS ts,
+            DATE_FORMAT(start_time, '%%Y-%%m-%%d %%H:%%i:%%s') AS ts_iso,
+            db AS database_name,
+            user_host,
+            sql_text,
+            TIME_TO_SEC(query_time) * 1000 AS query_time_ms,
+            TIME_TO_SEC(lock_time) * 1000 AS lock_time_ms,
+            rows_examined,
+            rows_sent
+        FROM mysql.slow_log
+        WHERE start_time >= FROM_UNIXTIME(%s)
+          AND sql_text IS NOT NULL
+          AND sql_text NOT LIKE 'SET timestamp=%%'
+          AND TIME_TO_SEC(query_time) * 1000 >= %s
+        ORDER BY start_time DESC
+        LIMIT %s
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, (start_ts, SELF_HOSTED_MIN_QUERY_TIME_MS, SELF_HOSTED_FETCH_LIMIT))
+        rows = cur.fetchall()
+    return [
+        {
+            "database": row.get("database_name"),
+            "user_host": row.get("user_host"),
+            "sql_text": row.get("sql_text"),
+            "query_time_ms": row.get("query_time_ms"),
+            "lock_time_ms": row.get("lock_time_ms"),
+            "rows_examined": row.get("rows_examined"),
+            "rows_sent": row.get("rows_sent"),
+            "ts": int(row.get("ts") or 0),
+            "ts_iso": row.get("ts_iso"),
+            "signature": _hash_signature("mysql.slow_log", row.get("ts"), row.get("user_host"), row.get("sql_text")),
+        }
+        for row in rows
+        if row.get("ts")
+    ]
+
+
+def _fetch_mysql_performance_schema(conn: Any, start_ts: int) -> List[Dict[str, Any]]:
+    sql = """
+        SELECT
+            SCHEMA_NAME AS database_name,
+            DIGEST_TEXT AS sql_text,
+            DIGEST AS digest,
+            COUNT_STAR AS calls,
+            ROUND(AVG_TIMER_WAIT / 1000000000) AS avg_ms,
+            ROUND(MAX_TIMER_WAIT / 1000000000) AS max_ms,
+            ROUND(SUM_LOCK_TIME / GREATEST(COUNT_STAR, 1) / 1000000000) AS lock_ms,
+            ROUND(SUM_ROWS_EXAMINED / GREATEST(COUNT_STAR, 1)) AS rows_examined,
+            ROUND(SUM_ROWS_SENT / GREATEST(COUNT_STAR, 1)) AS rows_sent,
+            UNIX_TIMESTAMP(LAST_SEEN) AS ts,
+            DATE_FORMAT(LAST_SEEN, '%%Y-%%m-%%d %%H:%%i:%%s') AS ts_iso
+        FROM performance_schema.events_statements_summary_by_digest
+        WHERE DIGEST_TEXT IS NOT NULL
+          AND LAST_SEEN >= FROM_UNIXTIME(%s)
+          AND (MAX_TIMER_WAIT / 1000000000) >= %s
+          AND UPPER(DIGEST_TEXT) NOT REGEXP '^(EXPLAIN|SHOW|SET|COMMIT|ROLLBACK|BEGIN|USE)[[:space:]]'
+        ORDER BY MAX_TIMER_WAIT DESC
+        LIMIT %s
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, (start_ts, SELF_HOSTED_MIN_QUERY_TIME_MS, SELF_HOSTED_FETCH_LIMIT))
+        rows = cur.fetchall()
+    return [
+        {
+            "database": row.get("database_name"),
+            "user_host": "performance_schema",
+            "sql_text": row.get("sql_text"),
+            "query_time_ms": row.get("max_ms") or row.get("avg_ms"),
+            "lock_time_ms": row.get("lock_ms"),
+            "rows_examined": row.get("rows_examined"),
+            "rows_sent": row.get("rows_sent"),
+            "ts": int(row.get("ts") or 0),
+            "ts_iso": row.get("ts_iso"),
+            "signature": _hash_signature(
+                "mysql.performance_schema",
+                row.get("digest"),
+                row.get("calls"),
+                row.get("max_ms"),
+                row.get("ts"),
+            ),
+        }
+        for row in rows
+        if row.get("ts")
+    ]
+
+
+def _fetch_self_hosted_mysql(instance: Dict[str, Any], start_ts: int) -> tuple[List[Dict[str, Any]], str]:
+    slow_log_error: Optional[str] = None
+    conn = _connect_mysql(instance)
+    try:
+        try:
+            rows = _fetch_mysql_slow_log(conn, start_ts)
+            if rows:
+                return rows, "mysql.slow_log"
+        except Exception as exc:  # noqa: BLE001
+            slow_log_error = f"{type(exc).__name__}: {exc}"
+
+        rows = _fetch_mysql_performance_schema(conn, start_ts)
+        source = "performance_schema.events_statements_summary_by_digest"
+        if slow_log_error:
+            source = f"{source}（slow_log 不可用：{slow_log_error}）"
+        return rows, source
+    finally:
+        conn.close()
+
+
+def _connect_postgresql(instance: Dict[str, Any]):
+    import psycopg2
+    import psycopg2.extras
+
+    return psycopg2.connect(
+        host=instance["host"],
+        port=int(instance["port"]),
+        user=instance.get("username") or "postgres",
+        password=instance.get("password") or "",
+        dbname=instance.get("database") or "postgres",
+        connect_timeout=SELF_HOSTED_CONNECT_TIMEOUT,
+        cursor_factory=psycopg2.extras.RealDictCursor,
+    )
+
+
+def _pg_stat_statement_columns(conn: Any) -> set[str]:
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM pg_stat_statements LIMIT 0")
+        return {desc.name for desc in cur.description}
+
+
+def _fetch_self_hosted_postgresql(instance: Dict[str, Any], _start_ts: int) -> tuple[List[Dict[str, Any]], str]:
+    bucket_ts = (_utc_now_ts() // SELF_HOSTED_PG_BUCKET_SECONDS) * SELF_HOSTED_PG_BUCKET_SECONDS
+    conn = _connect_postgresql(instance)
+    try:
+        columns = _pg_stat_statement_columns(conn)
+        if "mean_exec_time" in columns:
+            mean_col = "mean_exec_time"
+            max_col = "max_exec_time"
+        elif "mean_time" in columns:
+            mean_col = "mean_time"
+            max_col = "max_time"
+        else:
+            raise RuntimeError("pg_stat_statements 缺少执行时间字段")
+
+        sql = f"""
+            SELECT
+                d.datname AS database_name,
+                u.usename AS user_name,
+                s.query AS sql_text,
+                s.calls AS calls,
+                COALESCE(s.{mean_col}, 0) AS mean_ms,
+                COALESCE(s.{max_col}, 0) AS max_ms,
+                COALESCE(s.rows, 0) AS rows_sent
+            FROM pg_stat_statements s
+            JOIN pg_database d ON d.oid = s.dbid
+            JOIN pg_user u ON u.usesysid = s.userid
+            WHERE s.query IS NOT NULL
+              AND COALESCE(s.{max_col}, 0) >= %s
+              AND s.query !~* '^\\s*(EXPLAIN|SET|SHOW|BEGIN|COMMIT|ROLLBACK)'
+            ORDER BY COALESCE(s.{max_col}, 0) DESC
+            LIMIT %s
+        """
+        with conn.cursor() as cur:
+            cur.execute(sql, (SELF_HOSTED_MIN_QUERY_TIME_MS, SELF_HOSTED_FETCH_LIMIT))
+            rows = cur.fetchall()
+        return [
+            {
+                "database": row.get("database_name"),
+                "user_name": row.get("user_name"),
+                "user_host": "pg_stat_statements",
+                "sql_text": row.get("sql_text"),
+                "query_time_ms": row.get("max_ms") or row.get("mean_ms"),
+                "lock_time_ms": 0,
+                "rows_examined": 0,
+                "rows_sent": int(row.get("rows_sent") or 0),
+                "ts": bucket_ts,
+                "ts_iso": _utc_iso_from_ts(bucket_ts),
+                "signature": _hash_signature(
+                    "pg_stat_statements",
+                    row.get("database_name"),
+                    row.get("user_name"),
+                    row.get("calls"),
+                    row.get("max_ms"),
+                    row.get("rows_sent"),
+                    row.get("sql_text"),
+                    bucket_ts,
+                ),
+            }
+            for row in rows
+        ], "pg_stat_statements"
+    finally:
+        conn.close()
+
+
+def poll_self_hosted_instance(instance: Dict[str, Any]) -> Dict[str, Any]:
+    db_type = instance.get("db_type")
+    product = SELF_HOSTED_PRODUCT_BY_DB_TYPE.get(db_type)
+    result: Dict[str, Any] = {
+        "instance_id": instance.get("id"),
+        "instance_name": instance.get("name"),
+        "db_type": db_type,
+        "fetched": 0,
+        "inserted": 0,
+        "skipped": 0,
+        "source": None,
+        "error": None,
+    }
+    if not product:
+        result["error"] = f"不支持的自建慢 SQL 类型: {db_type}"
+        return result
+
+    try:
+        binding = storage.get_or_create_self_hosted_binding(int(instance["id"]), product)
+        sync_state = storage.get_sync_state(binding["id"])
+        last_ts = int(sync_state.get("last_ts") or 0)
+        start_ts = max(last_ts + 1, _utc_now_ts() - MAX_WINDOW_SECONDS)
+        storage.upsert_sync_state(binding["id"], last_poll_at=_now_iso())
+
+        if db_type == "MySQL":
+            raw_rows, source = _fetch_self_hosted_mysql(instance, start_ts)
+        elif db_type == "PostgreSQL":
+            raw_rows, source = _fetch_self_hosted_postgresql(instance, start_ts)
+        else:
+            raise RuntimeError(f"不支持的自建慢 SQL 类型: {db_type}")
+
+        normalized = _normalize_self_hosted_rows(raw_rows, binding)
+        inserted = storage.insert_slow_queries(normalized)
+        max_ts = last_ts
+        for row in normalized:
+            if row["ts"] > max_ts:
+                max_ts = row["ts"]
+        storage.upsert_sync_state(
+            binding["id"],
+            last_success_at=_now_iso(),
+            last_ts=max_ts,
+            last_error=None,
+            consecutive_failures=0,
+        )
+        result.update(
+            {
+                "fetched": len(raw_rows),
+                "inserted": inserted,
+                "skipped": len(normalized) - inserted,
+                "source": source,
+            }
+        )
+        return result
+    except Exception as exc:  # noqa: BLE001
+        msg = f"{type(exc).__name__}: {exc}"
+        result["error"] = msg
+        try:
+            if product and instance.get("id"):
+                binding = storage.get_or_create_self_hosted_binding(int(instance["id"]), product)
+                state = storage.get_sync_state(binding["id"])
+                storage.upsert_sync_state(
+                    binding["id"],
+                    last_error=msg,
+                    consecutive_failures=int(state.get("consecutive_failures") or 0) + 1,
+                )
+        except Exception:
+            pass
+        return result
+
+
+def poll_all_self_hosted(instance_id: Optional[int] = None) -> Dict[str, Any]:
+    instances = storage.list_self_hosted_slow_instances(instance_id=instance_id)
+    results = [poll_self_hosted_instance(instance) for instance in instances]
+    storage.purge_old_slow_queries()
+    return {
+        "total": len(results),
+        "fetched": sum(int(r.get("fetched") or 0) for r in results),
+        "inserted": sum(int(r.get("inserted") or 0) for r in results),
+        "skipped": sum(int(r.get("skipped") or 0) for r in results),
+        "errors": [r for r in results if r.get("error")],
+        "results": results,
+    }
 
 
 def _now_iso() -> str:

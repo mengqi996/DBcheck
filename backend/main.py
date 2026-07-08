@@ -8,6 +8,7 @@ DBCheck backend service.
 import os
 import sqlite3
 import time
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -98,6 +99,7 @@ SCHEDULER_MAX_CONCURRENCY = int(os.getenv("DBCHECK_SCHEDULER_CONCURRENCY", "4"))
 SCHEDULER_ENABLED = env_flag("DBCHECK_SCHEDULER_ENABLED", False)
 CLOUD_BACKUP_ENABLED = env_flag("DBCHECK_CLOUD_BACKUP_ENABLED", False)
 TENCENT_API_ENABLED = env_flag("DBCHECK_TENCENT_API_ENABLED", False)
+SLOW_QUERY_PRODUCTS = {"cdb", "cynosdb", "postgres", "self_mysql", "self_postgresql"}
 
 
 def ensure_tencent_api_enabled(operation: str = "腾讯云 API 调用") -> None:
@@ -1004,7 +1006,7 @@ def import_tc_instances(payload: TCDiscoveryRequest):
 @app.get("/api/slow-queries", response_model=APIResponse)
 def list_slow_queries_endpoint(
     instance_id: int = Query(None),
-    tc_product: TCProduct = Query(None),
+    tc_product: str = Query(None),
     tc_region: str = Query(None),
     database: str = Query(None),
     min_query_time_ms: int = Query(None, ge=0),
@@ -1015,9 +1017,11 @@ def list_slow_queries_endpoint(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
 ):
+    if tc_product and tc_product not in SLOW_QUERY_PRODUCTS:
+        raise HTTPException(status_code=400, detail="不支持的慢查询来源类型")
     result = list_slow_queries(
         instance_id=instance_id,
-        tc_product=tc_product.value if tc_product else None,
+        tc_product=tc_product,
         tc_region=tc_region,
         database=database,
         min_query_time_ms=min_query_time_ms,
@@ -1078,13 +1082,34 @@ def slow_query_top_endpoint(
 
 
 @app.post("/api/slow-queries/refresh", response_model=APIResponse)
-async def refresh_slow_queries():
-    ensure_tencent_api_enabled("慢查询立即同步")
-    sched = app.state.scheduler
-    triggered = await sched.trigger_now()
+async def refresh_slow_queries(instance_id: int = Query(None, description="仅采集指定自建实例 ID")):
+    self_hosted = await asyncio.to_thread(
+        slow_query_service.poll_all_self_hosted,
+        instance_id,
+    )
+    tencent_triggered = False
+    tencent_skipped_reason = None
+    if TENCENT_API_ENABLED:
+        sched = app.state.scheduler
+        tencent_triggered = await sched.trigger_now()
+    else:
+        tencent_skipped_reason = "腾讯云 API 调用已关闭，已跳过腾讯云慢查询同步"
+
+    message = (
+        f"自建库采集完成：新增 {self_hosted['inserted']} 条"
+        if self_hosted["total"]
+        else "未找到可直接采集的自建 MySQL/PostgreSQL 实例"
+    )
+    if tencent_triggered:
+        message += "；腾讯云同步已触发"
     return success(
-        message="已执行立即同步" if triggered else "忽略：5s 防抖中",
-        data={"triggered": triggered},
+        message=message,
+        data={
+            "triggered": True,
+            "tencent_triggered": tencent_triggered,
+            "tencent_skipped_reason": tencent_skipped_reason,
+            "self_hosted": self_hosted,
+        },
     )
 
 

@@ -997,6 +997,8 @@
         .badge.cdb    { background: #1e6dff; color: #fff; }
         .badge.cynosdb { background: #6b5fb5; color: #fff; }
         .badge.postgres { background: #2f6f8f; color: #fff; }
+        .badge.self_mysql { background: #0f8f8c; color: #fff; }
+        .badge.self_postgresql { background: #27864f; color: #fff; }
 
         .sql-template {
             font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -1761,8 +1763,8 @@
                     <div class="panel" style="margin-bottom: 14px;">
                         <div class="panel-header">
                             <div>
-                                <div class="panel-title">腾讯云接入</div>
-                                <div class="panel-subtitle">录入凭证、绑定实例、查看同步状态</div>
+                                <div class="panel-title">慢 SQL 接入</div>
+                                <div class="panel-subtitle">腾讯云通过 OpenAPI 同步；自建 MySQL/PostgreSQL 通过只读统计视图采集</div>
                             </div>
                             <div style="display:flex; gap:8px;">
                                 <button class="btn" onclick="openCredentialModal()">
@@ -1782,10 +1784,10 @@
                         <div class="sync-status-card" id="slowSyncStatus">
                             <span><span class="dot" id="slowSyncDot"></span><span id="slowSyncText">同步器状态加载中…</span></span>
                             <span class="muted">上次拉取：<span id="slowLastTick">-</span></span>
-                            <span class="muted">启用绑定：<span id="slowBindingsCount">-</span></span>
-                            <span class="muted">失败绑定：<span id="slowFailingCount">-</span></span>
+                            <span class="muted">启用 TC 绑定：<span id="slowBindingsCount">-</span></span>
+                            <span class="muted">失败 TC 绑定：<span id="slowFailingCount">-</span></span>
                             <span style="margin-left:auto;">
-                                <button class="btn tiny" onclick="triggerSlowRefresh()">立即同步</button>
+                                <button class="btn tiny" onclick="triggerSlowRefresh()">立即同步/采集</button>
                             </span>
                         </div>
                         <div id="slowBindingsList"></div>
@@ -1810,12 +1812,14 @@
                                         <select id="slowFilterInstance" class="select"><option value="">全部</option></select>
                                     </div>
                                     <div class="form-field">
-                                        <label>TC 产品</label>
+                                        <label>来源</label>
                                         <select id="slowFilterProduct" class="select">
                                             <option value="">全部</option>
                                             <option value="cdb">CDB</option>
                                             <option value="cynosdb">TDSQL-C</option>
                                             <option value="postgres">PostgreSQL</option>
+                                            <option value="self_mysql">自建 MySQL</option>
+                                            <option value="self_postgresql">自建 PostgreSQL</option>
                                         </select>
                                     </div>
                                     <div class="form-field">
@@ -2299,7 +2303,9 @@
             return ({
                 cdb: 'CDB',
                 cynosdb: 'TDSQL-C',
-                postgres: 'PostgreSQL'
+                postgres: 'PostgreSQL',
+                self_mysql: '自建 MySQL',
+                self_postgresql: '自建 PostgreSQL'
             })[value] || value || '-';
         }
 
@@ -4031,8 +4037,12 @@
 
         async function triggerSlowRefresh() {
             try {
-                const data = await api('/api/slow-queries/refresh', { method: 'POST' });
-                toast(data.data.triggered ? '已执行立即同步' : '忽略：5s 防抖中', data.data.triggered ? 'success' : 'info');
+                const selectedInstance = document.getElementById('slowFilterInstance')?.value;
+                const suffix = selectedInstance ? `?instance_id=${encodeURIComponent(selectedInstance)}` : '';
+                const data = await api(`/api/slow-queries/refresh${suffix}`, { method: 'POST' });
+                const selfHosted = data.data.self_hosted || {};
+                const hasErrors = (selfHosted.errors || []).length > 0;
+                toast(data.message || '已执行立即同步/采集', hasErrors ? 'warning' : 'success');
                 if (data.data.triggered) {
                     setTimeout(() => {
                         loadSchedulerStatus();
@@ -4153,8 +4163,8 @@
                     <div>
                         <table class="kv-table">
                             <tr><th>实例</th><td>${escapeHtml(q.instance_name || ('#' + q.instance_id))} <span class="badge ${q.tc_product}">${escapeHtml(productLabel(q.tc_product))}</span></td></tr>
-                            <tr><th>TC 实例</th><td><code>${escapeHtml(q.tc_instance_id)}</code></td></tr>
-                            <tr><th>地域</th><td>${escapeHtml(q.tc_region)}</td></tr>
+                            <tr><th>来源实例</th><td><code>${escapeHtml(q.tc_instance_id)}</code></td></tr>
+                            <tr><th>地域/来源</th><td>${escapeHtml(q.tc_region)}</td></tr>
                             <tr><th>数据库</th><td>${escapeHtml(q.database || '-')}</td></tr>
                             <tr><th>用户@主机</th><td>${escapeHtml((q.user_name || '') + '@' + (q.user_host || ''))}</td></tr>
                             <tr><th>时间</th><td>${escapeHtml(q.ts_iso)}</td></tr>

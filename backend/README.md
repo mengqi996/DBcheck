@@ -10,6 +10,7 @@
 - 检测日志：保存每次检测结果、耗时和错误信息
 - 备份任务：列表、创建、删除、状态统计
 - SQL 查询：MySQL / PostgreSQL 只读查询，自动限制返回行数
+- 慢 SQL：腾讯云 OpenAPI 同步；自建 MySQL / PostgreSQL 可直接连库采集
 - 工作台汇总：实例健康度、环境分布、备份状态、最近检测
 
 ## 支持的数据库
@@ -51,6 +52,16 @@ backend/dbcheck.db
 - 慢 SQL 自动轮询默认关闭；需要自动轮询时显式设置 `DBCHECK_SCHEDULER_ENABLED=true`。
 - 自动轮询间隔默认 `3600` 秒；可用 `DBCHECK_POLL_INTERVAL=3600` 调整。
 - 真实腾讯云备份创建默认关闭；需要允许调用云端备份接口时显式设置 `DBCHECK_CLOUD_BACKUP_ENABLED=true`。
+
+自建库慢 SQL 采集默认值：
+
+- `DBCHECK_SELF_HOSTED_SLOW_MIN_MS=1000`：只采集最大执行耗时不低于该阈值的记录/摘要。
+- `DBCHECK_SELF_HOSTED_SLOW_LIMIT=200`：单实例单次最多采集条数。
+- `DBCHECK_SELF_HOSTED_CONNECT_TIMEOUT=5`：自建库采集连接超时秒数。
+
+自建 MySQL 优先读取 `mysql.slow_log`，无数据或不可用时读取
+`performance_schema.events_statements_summary_by_digest`。自建 PostgreSQL 读取
+`pg_stat_statements`。如果数据库侧没有开启这些统计/日志，接口会正常返回 0 条。
 
 示例：
 
@@ -98,6 +109,7 @@ http://127.0.0.1:8000/docs
 | POST | `/api/backups` | 创建备份任务 |
 | DELETE | `/api/backups/{id}` | 删除备份记录 |
 | POST | `/api/sql/execute` | 执行只读 SQL |
+| POST | `/api/slow-queries/refresh` | 立即同步腾讯云慢 SQL 并采集自建库慢 SQL |
 
 ## 示例
 
