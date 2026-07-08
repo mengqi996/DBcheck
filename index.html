@@ -2899,7 +2899,7 @@
                     <td>${escapeHtml(item.end_time || '-')}</td>
                     <td>${badge(item.status || 'pending', labelOf(item.status || 'pending'))}</td>
                     <td>
-                        <button class="btn tiny" onclick="downloadBinlog(${index})">
+                        <button class="btn tiny" onclick="downloadBinlog(${index})" ${item.tc_product === 'self_mysql' ? 'disabled title="自建 MySQL 暂不支持生成下载链接"' : ''}>
                             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
                             下载
                         </button>
@@ -2909,9 +2909,12 @@
         }
 
         function binlogEmptyText() {
-            if (!state.binlogBindings.length) return '暂无已绑定的腾讯云实例';
+            if (!state.binlogBindings.length) return '暂无可查询的云实例或自建 MySQL 实例';
             const meta = state.binlogMeta || {};
             if (meta.notice) return meta.notice;
+            if (meta.kind === 'self_mysql_binlog') {
+                return '自建 MySQL 未返回 binlog 文件；请确认已开启 log_bin 且账号具备 SHOW BINARY LOGS 权限';
+            }
             if (meta.kind === 'postgres_xlog') {
                 return '腾讯云返回空；所选时间范围内没有 PostgreSQL WAL 日志';
             }
@@ -3169,9 +3172,8 @@
 
         async function loadBinlogBindings() {
             ensureBinlogWindow();
-            const data = await api('/api/bindings');
-            state.binlogBindings = (data.data.items || [])
-                .filter(item => ['cdb', 'cynosdb', 'postgres'].includes(item.tc_product));
+            const data = await api('/api/binlogs/bindings');
+            state.binlogBindings = data.data.items || [];
             if (!state.selectedBinlogBindingId && state.binlogBindings[0]) {
                 state.selectedBinlogBindingId = state.binlogBindings[0].id;
             }
@@ -3212,6 +3214,10 @@
         async function downloadBinlog(index) {
             const item = state.binlogs[index];
             if (!item) return;
+            if (item.tc_product === 'self_mysql') {
+                toast('自建 MySQL binlog 暂不支持生成浏览器下载链接，请在数据库服务器上使用 mysqlbinlog 或文件系统获取', 'warning');
+                return;
+            }
             try {
                 let url = item.download_url;
                 if (!url) {

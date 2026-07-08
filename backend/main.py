@@ -526,12 +526,16 @@ def delete_backup(backup_id: int):
 
 @app.get("/api/binlogs", response_model=APIResponse)
 def list_binlogs_endpoint(
-    binding_id: int = Query(..., description="腾讯云绑定 ID"),
+    binding_id: int = Query(..., description="绑定 ID"),
     start_time: str = Query(None, description="开始时间 YYYY-MM-DD HH:MM:SS"),
     end_time: str = Query(None, description="结束时间 YYYY-MM-DD HH:MM:SS"),
     limit: int = Query(200, ge=1, le=1000),
 ):
-    ensure_tencent_api_enabled("腾讯云日志文件查询")
+    binding = repo_get_binding(binding_id)
+    if not binding:
+        raise HTTPException(status_code=404, detail="绑定不存在")
+    if not str(binding.get("tc_product") or "").startswith("self_"):
+        ensure_tencent_api_enabled("腾讯云日志文件查询")
     try:
         data = binlog_service.list_binlogs(
             binding_id=binding_id,
@@ -546,12 +550,26 @@ def list_binlogs_endpoint(
     return success(data=data)
 
 
+@app.get("/api/binlogs/bindings", response_model=APIResponse)
+def list_binlog_bindings_endpoint():
+    data = binlog_service.list_binlog_bindings()
+    enriched = []
+    for row in data["items"]:
+        state = repo_get_sync_state(row["id"])
+        enriched.append(_to_binding_response({**row, **state}).model_dump())
+    return success(data={"total": len(enriched), "items": enriched})
+
+
 @app.get("/api/binlogs/download-url", response_model=APIResponse)
 def binlog_download_url_endpoint(
-    binding_id: int = Query(..., description="腾讯云绑定 ID"),
+    binding_id: int = Query(..., description="绑定 ID"),
     binlog_id: str = Query(..., description="Binlog ID"),
 ):
-    ensure_tencent_api_enabled("腾讯云日志下载链接查询")
+    binding = repo_get_binding(binding_id)
+    if not binding:
+        raise HTTPException(status_code=404, detail="绑定不存在")
+    if not str(binding.get("tc_product") or "").startswith("self_"):
+        ensure_tencent_api_enabled("腾讯云日志下载链接查询")
     try:
         data = binlog_service.binlog_download_url(binding_id, binlog_id)
     except ValueError as exc:
