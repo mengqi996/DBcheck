@@ -3092,7 +3092,7 @@
                         .join('\n');
                     const ok = confirm(
                         `实例 ${instanceName} 已绑定腾讯云：\n${targets}\n\n` +
-                        '后端默认禁用真实云端备份。若已设置 DBCHECK_CLOUD_BACKUP_ENABLED=true，继续会向腾讯云发起手动备份，可能增加备份存储费用。\n\n' +
+                        'DBCHECK_CLOUD_BACKUP_ENABLED=true 时，继续会向腾讯云发起真实手动备份，可能增加备份存储费用。\n\n' +
                         '确定继续？'
                     );
                     if (!ok) return;

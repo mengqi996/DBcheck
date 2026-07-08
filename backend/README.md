@@ -47,11 +47,26 @@ backend/dbcheck.db
 
 这是 SQLite 数据库文件，里面保存实例、备份和检测日志。
 
-费用安全默认值：
+腾讯云主动调用开关：
 
-- 慢 SQL 自动轮询默认关闭；需要自动轮询时显式设置 `DBCHECK_SCHEDULER_ENABLED=true`。
+- `DBCHECK_TENCENT_API_ENABLED=true`：腾讯云 API 总开关，关闭后不会主动调用腾讯云。
+- `DBCHECK_CLOUD_BACKUP_ENABLED=true`：允许创建真实腾讯云备份任务。
+- `DBCHECK_SCHEDULER_ENABLED=true`：启用慢 SQL 自动轮询。
 - 自动轮询间隔默认 `3600` 秒；可用 `DBCHECK_POLL_INTERVAL=3600` 调整。
-- 真实腾讯云备份创建默认关闭；需要允许调用云端备份接口时显式设置 `DBCHECK_CLOUD_BACKUP_ENABLED=true`。
+
+生产环境 `/opt/dbcheck/.env` 中推荐不要在值后面加行尾注释；后端会容错忽略
+`#` 后面的内容，但纯值最容易排查。推荐写成：
+
+```env
+# 腾讯云 API 总开关
+DBCHECK_TENCENT_API_ENABLED=true
+
+# 真实创建腾讯云备份任务
+DBCHECK_CLOUD_BACKUP_ENABLED=true
+
+# 慢 SQL 自动轮询
+DBCHECK_SCHEDULER_ENABLED=true
+```
 
 自建库慢 SQL 采集默认值：
 

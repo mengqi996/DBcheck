@@ -91,14 +91,19 @@ def env_flag(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    normalized = value.split("#", 1)[0].strip().lower()
+    return normalized in {"1", "true", "yes", "on"}
 
+
+# Tencent Cloud feature switches.
+# Defaults are ON for production use. Set any value to false/0/no/off in
+# /opt/dbcheck/.env to disable the corresponding capability.
+TENCENT_API_ENABLED = env_flag("DBCHECK_TENCENT_API_ENABLED", True)
+CLOUD_BACKUP_ENABLED = env_flag("DBCHECK_CLOUD_BACKUP_ENABLED", True)
+SCHEDULER_ENABLED = env_flag("DBCHECK_SCHEDULER_ENABLED", True)
 
 POLL_INTERVAL_SECONDS = int(os.getenv("DBCHECK_POLL_INTERVAL", "3600"))
 SCHEDULER_MAX_CONCURRENCY = int(os.getenv("DBCHECK_SCHEDULER_CONCURRENCY", "4"))
-SCHEDULER_ENABLED = env_flag("DBCHECK_SCHEDULER_ENABLED", False)
-CLOUD_BACKUP_ENABLED = env_flag("DBCHECK_CLOUD_BACKUP_ENABLED", False)
-TENCENT_API_ENABLED = env_flag("DBCHECK_TENCENT_API_ENABLED", False)
 SLOW_QUERY_PRODUCTS = {"cdb", "cynosdb", "postgres", "self_mysql", "self_postgresql"}
 
 
@@ -1159,6 +1164,9 @@ def explain_slow_query(slow_query_id: int):
 def scheduler_status_endpoint():
     sched: scheduler_mod.SlowQueryScheduler = app.state.scheduler
     data = sched.status()
+    data["tencent_api_enabled"] = TENCENT_API_ENABLED
+    data["cloud_backup_enabled"] = CLOUD_BACKUP_ENABLED
+    data["scheduler_enabled"] = SCHEDULER_ENABLED
     data["auto_enabled"] = bool(getattr(app.state, "scheduler_auto_enabled", False))
     return success(data=data)
 

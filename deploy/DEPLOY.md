@@ -201,24 +201,32 @@ sudo certbot --nginx -d dbcheck.example.com
 
 ## 7. 主动调用开关(腾讯云)
 
-DBCheck 默认**所有主动调用都关闭**,所以部署后它不会主动连腾讯云。
+DBCheck 当前默认**腾讯云主动调用全部开启**。如果你要显式标注生产环境配置,
+推荐在 `/opt/dbcheck/.env` 写纯值；后端会容错忽略 `#` 后面的行尾说明,
+但纯值最容易排查。
 
-当你准备好接入时:
+编辑配置:
 
 ```bash
-sudo systemctl edit dbcheck   # 或直接编辑 /opt/dbcheck/.env
+sudo vi /opt/dbcheck/.env
 ```
 
-把对应行取消注释并改为 `true`:
+开关含义和推荐写法:
 
-```bash
+```env
+# 腾讯云 API 总开关,控制备份同步、慢 SQL 同步、监控、binlog 等所有主动云 API
 DBCHECK_TENCENT_API_ENABLED=true
-# DBCHECK_CLOUD_BACKUP_ENABLED=true
-# DBCHECK_SCHEDULER_ENABLED=true
+
+# 真实创建腾讯云备份任务；如果只想同步备份元数据,可以改成 false
+DBCHECK_CLOUD_BACKUP_ENABLED=true
+
+# 慢 SQL 自动轮询
+DBCHECK_SCHEDULER_ENABLED=true
 ```
 
 ```bash
 sudo systemctl restart dbcheck
+curl -s http://127.0.0.1:8000/api/scheduler/status
 ```
 
 ---
@@ -246,9 +254,9 @@ sudo systemctl restart dbcheck
 | 端口没起 | `sudo ss -tlnp | grep 8000` |
 | 页面 502 | 后端没起或挂了 |
 | 页面 404 | 浏览器没带路径,直访 `http://server:8000/`(不是 `/index.html`) |
-| TC 接口 403 | `.env` 里没开 `DBCHECK_TENCENT_API_ENABLED=true` |
+| TC 接口 403 | 检查进程环境里 `DBCHECK_TENCENT_API_ENABLED=true` 是否生效 |
 | 登录凭证失效 | `.fernet_key` 跟当初加密的不是同一个,需要重录凭证 |
-| 慢查询拿不到 | 同时需要 `TENCENT_API_ENABLED=true` 和 `SCHEDULER_ENABLED=true`,且绑定已启用 |
+| 慢查询拿不到 | 需要 `DBCHECK_TENCENT_API_ENABLED=true` 和 `DBCHECK_SCHEDULER_ENABLED=true`,且绑定已启用 |
 
 ---
 
