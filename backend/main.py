@@ -127,12 +127,24 @@ def ensure_tencent_api_enabled(operation: str = "腾讯云 API 调用") -> None:
         )
 
 
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
 def validate_runtime_storage_paths() -> None:
     cwd = Path.cwd().resolve()
     db_path = SQLITE_DB_PATH.resolve()
     key_path = FERNET_KEY_PATH.resolve()
 
-    likely_production = cwd == PRODUCTION_APP_ROOT or db_path.is_relative_to(PRODUCTION_APP_ROOT) or key_path.is_relative_to(PRODUCTION_APP_ROOT)
+    likely_production = (
+        cwd == PRODUCTION_APP_ROOT
+        or _is_relative_to(db_path, PRODUCTION_APP_ROOT)
+        or _is_relative_to(key_path, PRODUCTION_APP_ROOT)
+    )
     if not likely_production:
         return
 
@@ -147,12 +159,12 @@ def validate_runtime_storage_paths() -> None:
             "DBCHECK_FERNET_KEY_FILE 仍指向代码目录 /opt/dbcheck/app/.fernet_key。"
             " 请改到 /opt/dbcheck/data/.fernet_key。"
         )
-    if db_path.is_relative_to(PRODUCTION_APP_ROOT):
+    if _is_relative_to(db_path, PRODUCTION_APP_ROOT):
         errors.append(
             f"当前 SQLite 路径在代码目录内：{db_path}。"
             " 请设置 DBCHECK_SQLITE_PATH=/opt/dbcheck/data/dbcheck.db"
         )
-    if key_path.is_relative_to(PRODUCTION_APP_ROOT):
+    if _is_relative_to(key_path, PRODUCTION_APP_ROOT):
         errors.append(
             f"当前 Fernet 密钥路径在代码目录内：{key_path}。"
             " 请设置 DBCHECK_FERNET_KEY_FILE=/opt/dbcheck/data/.fernet_key"
