@@ -62,12 +62,13 @@
         .sidebar {
             background: #ffffff;
             border-right: 1px solid var(--line);
-            padding: 18px 14px;
+            padding: 18px 14px 22px;
             position: sticky;
             top: 0;
             height: 100vh;
             display: flex;
             flex-direction: column;
+            overflow-y: auto;
         }
 
         .brand {
@@ -94,29 +95,28 @@
         .nav-title {
             color: var(--muted);
             font-size: 12px;
-            margin: 22px 10px 8px;
+            margin: 18px 10px 8px;
             flex: 0 0 auto;
         }
 
         .sidebar-nav {
-            display: grid;
-            grid-auto-rows: minmax(66px, 1fr);
-            gap: 8px;
-            flex: 1;
-            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 0 0 auto;
         }
 
         .nav-item {
             width: 100%;
-            min-height: 66px;
+            min-height: 56px;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             border: 1px solid transparent;
             border-radius: 8px;
             background: transparent;
             color: #38414b;
-            padding: 10px;
+            padding: 8px 10px;
             text-align: left;
             transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
         }
@@ -134,8 +134,8 @@
         }
 
         .nav-icon {
-            width: 34px;
-            height: 34px;
+            width: 32px;
+            height: 32px;
             display: grid;
             place-items: center;
             flex: 0 0 auto;
@@ -1779,6 +1779,48 @@
         }
         .btn.danger { background: var(--red); color: #fff; border-color: var(--red); }
         .btn.tiny { padding: 4px 10px; font-size: 12px; }
+
+        .page-list {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .page-jump {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 10px;
+        }
+
+        .page-jump .input {
+            width: 68px;
+            height: 30px;
+        }
+
+        .page-number {
+            min-width: 32px;
+            height: 30px;
+            padding: 0 9px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #ffffff;
+            color: #2d343c;
+        }
+
+        .page-number.active {
+            background: var(--teal);
+            border-color: var(--teal);
+            color: #ffffff;
+            font-weight: 650;
+        }
+
+        .page-ellipsis {
+            color: var(--muted);
+            padding: 0 2px;
+        }
     </style>
 </head>
 <body class="auth-locked">
@@ -2079,6 +2121,13 @@
                                 <option value="pending">待执行</option>
                                 <option value="failed">失败</option>
                             </select>
+                            <select id="backupFilterInstance" class="select">
+                                <option value="">全部实例</option>
+                            </select>
+                            <button class="btn btn-primary" onclick="queryBackups()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                                查询
+                            </button>
                         </div>
                         <div class="toolbar-right">
                             <select id="backupInstance" class="select"></select>
@@ -2124,6 +2173,13 @@
                                 </thead>
                                 <tbody id="backupsTable"></tbody>
                             </table>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; padding:10px 14px; align-items:center;">
+                            <div class="page-list" id="backupPageList"></div>
+                            <div class="page-jump">
+                                <input class="input" id="backupPageInput" type="number" min="1" value="1" aria-label="备份页码">
+                                <button class="btn tiny" onclick="backupPageJump()">跳转</button>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -3002,6 +3058,8 @@
             dashboard: null,
             instances: [],
             backups: [],
+            backupPage: 1,
+            backupPageSize: 10,
             backupSyncing: false,
             backupAutoSyncTimer: null,
             backupPollTimers: {},
@@ -3386,11 +3444,22 @@
             const params = new URLSearchParams();
             const keyword = document.getElementById('backupKeyword')?.value.trim();
             const status = document.getElementById('backupStatus')?.value;
+            const instanceId = document.getElementById('backupFilterInstance')?.value;
             if (keyword) params.set('keyword', keyword);
             if (status) params.set('status', status);
+            if (instanceId) params.set('instance_id', instanceId);
             const data = await api(`/api/backups${params.toString() ? '?' + params.toString() : ''}`);
             state.backups = data.data.items || [];
             renderBackups();
+        }
+
+        async function queryBackups() {
+            try {
+                state.backupPage = 1;
+                await loadBackups();
+            } catch (error) {
+                toast(`查询失败：${error.message}`, 'error');
+            }
         }
 
         function hasRunningTencentBackups(instanceId = null) {
@@ -3811,8 +3880,19 @@
         function renderBackups() {
             const tbody = document.getElementById('backupsTable');
             if (!tbody) return;
-            document.getElementById('backupCount').textContent = `共 ${state.backups.length} 条备份记录`;
-            tbody.innerHTML = state.backups.length ? state.backups.map(item => {
+            const total = state.backups.length;
+            const totalPages = Math.max(1, Math.ceil(total / state.backupPageSize));
+            state.backupPage = Math.min(Math.max(1, state.backupPage), totalPages);
+            const start = (state.backupPage - 1) * state.backupPageSize;
+            const visibleBackups = state.backups.slice(start, start + state.backupPageSize);
+            document.getElementById('backupCount').textContent = `共 ${total} 条备份记录`;
+            renderBackupPagination(totalPages);
+            const pageInput = document.getElementById('backupPageInput');
+            if (pageInput) {
+                pageInput.value = String(state.backupPage);
+                pageInput.max = String(totalPages);
+            }
+            tbody.innerHTML = visibleBackups.length ? visibleBackups.map(item => {
                 const cloudBadge = item.cloud_provider === 'tencent'
                     ? `<span class="badge ${escapeHtml(item.tc_product || 'type')}">腾讯云</span>`
                     : '';
@@ -3837,6 +3917,63 @@
                     </tr>
                 `;
             }).join('') : '<tr><td colspan="9" class="empty">没有匹配的备份记录</td></tr>';
+        }
+
+        function backupPageItems(current, total) {
+            if (total <= 10) {
+                return Array.from({ length: total }, (_, index) => index + 1);
+            }
+            const pages = new Set([1, 2, total - 1, total, current - 1, current, current + 1]);
+            const sorted = [...pages]
+                .filter(page => page >= 1 && page <= total)
+                .sort((a, b) => a - b);
+            const items = [];
+            sorted.forEach(page => {
+                if (items.length && page - items[items.length - 1] > 1) {
+                    items.push('...');
+                }
+                items.push(page);
+            });
+            return items;
+        }
+
+        function renderBackupPagination(totalPages) {
+            const container = document.getElementById('backupPageList');
+            if (!container) return;
+            if (totalPages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+            container.innerHTML = backupPageItems(state.backupPage, totalPages).map(item => {
+                if (item === '...') {
+                    return '<span class="page-ellipsis">...</span>';
+                }
+                return `<button class="page-number ${item === state.backupPage ? 'active' : ''}" onclick="backupPageGo(${item})">${item}</button>`;
+            }).join('');
+        }
+
+        function backupPageGo(page) {
+            const totalPages = Math.max(1, Math.ceil(state.backups.length / state.backupPageSize));
+            state.backupPage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+            renderBackups();
+        }
+
+        function backupPageJump() {
+            const input = document.getElementById('backupPageInput');
+            backupPageGo(input?.value || 1);
+        }
+
+        function backupPagePrev() {
+            if (state.backupPage <= 1) return;
+            state.backupPage -= 1;
+            renderBackups();
+        }
+
+        function backupPageNext() {
+            const totalPages = Math.max(1, Math.ceil(state.backups.length / state.backupPageSize));
+            if (state.backupPage >= totalPages) return;
+            state.backupPage += 1;
+            renderBackups();
         }
 
         function renderBinlogPage() {
@@ -3944,11 +4081,22 @@
 
         function renderBackupInstanceOptions() {
             const select = document.getElementById('backupInstance');
-            if (!select) return;
-            const current = select.value;
-            select.innerHTML = state.instances.map(inst => `<option value="${inst.id}">${escapeHtml(inst.name)}</option>`).join('');
-            if (current && state.instances.some(inst => String(inst.id) === current)) {
-                select.value = current;
+            if (select) {
+                const current = select.value;
+                select.innerHTML = state.instances.map(inst => `<option value="${inst.id}">${escapeHtml(inst.name)}</option>`).join('');
+                if (current && state.instances.some(inst => String(inst.id) === current)) {
+                    select.value = current;
+                }
+            }
+
+            const filterSelect = document.getElementById('backupFilterInstance');
+            if (filterSelect) {
+                const currentFilter = filterSelect.value;
+                filterSelect.innerHTML = '<option value="">全部实例</option>'
+                    + state.instances.map(inst => `<option value="${inst.id}">${escapeHtml(inst.name)}</option>`).join('');
+                if (currentFilter && state.instances.some(inst => String(inst.id) === currentFilter)) {
+                    filterSelect.value = currentFilter;
+                }
             }
         }
 
@@ -4417,9 +4565,16 @@
             document.getElementById(id).addEventListener('change', () => loadInstances().catch(error => toast(error.message, 'error')));
         });
 
-        ['backupKeyword', 'backupStatus'].forEach(id => {
-            document.getElementById(id).addEventListener('input', () => loadBackups().catch(error => toast(error.message, 'error')));
-            document.getElementById(id).addEventListener('change', () => loadBackups().catch(error => toast(error.message, 'error')));
+        ['backupKeyword', 'backupStatus', 'backupFilterInstance'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('keydown', event => {
+                if (event.key === 'Enter') queryBackups();
+            });
+        });
+
+        document.getElementById('backupPageInput')?.addEventListener('keydown', event => {
+            if (event.key === 'Enter') backupPageJump();
         });
 
         document.getElementById('monitorBinding').addEventListener('change', () => {
