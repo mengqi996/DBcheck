@@ -50,6 +50,7 @@ import slow_query_service
 import backup_service
 import binlog_service
 import monitor_service
+from async_compat import to_thread
 from storage import (
     create_backup as repo_create_backup,
     create_binding as repo_create_binding,
@@ -1203,7 +1204,7 @@ def slow_query_top_endpoint(
 
 @app.post("/api/slow-queries/refresh", response_model=APIResponse)
 async def refresh_slow_queries(instance_id: int = Query(None, description="仅采集指定自建实例 ID")):
-    self_hosted = await asyncio.to_thread(
+    self_hosted = await to_thread(
         slow_query_service.poll_all_self_hosted,
         instance_id,
     )

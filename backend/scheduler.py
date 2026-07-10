@@ -13,6 +13,7 @@ from typing import Optional
 
 import slow_query_service
 import storage
+from async_compat import to_thread
 
 
 logger = logging.getLogger("dbcheck.scheduler")
@@ -139,12 +140,12 @@ class SlowQueryScheduler:
             bindings = storage.list_bindings(enabled_only=True)
             if bindings:
                 await asyncio.gather(*(self._poll_with_sem(b) for b in bindings))
-            await asyncio.to_thread(storage.purge_old_slow_queries)
+            await to_thread(storage.purge_old_slow_queries)
 
     async def _poll_with_sem(self, binding: dict) -> None:
         async with self._sem:
             self._active_polls += 1
             try:
-                await asyncio.to_thread(slow_query_service.poll_one_binding, binding)
+                await to_thread(slow_query_service.poll_one_binding, binding)
             finally:
                 self._active_polls -= 1
