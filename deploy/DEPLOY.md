@@ -40,6 +40,9 @@ sudo yum install -y epel-release
 sudo yum install -y python38 python38-pip git rsync
 ```
 
+如果服务器还是系统自带 OpenSSL 1.0.2（CentOS 7 常见），DBCheck 依赖必须固定
+`urllib3<2`，否则腾讯云 Python SDK 在 import 阶段就会失败。
+
 不要替换系统默认 Python。安装新版本后指定给安装脚本:
 
 ```bash
