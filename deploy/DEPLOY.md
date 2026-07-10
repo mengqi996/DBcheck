@@ -151,8 +151,18 @@ sudo journalctl -u dbcheck -f
 # 端口监听
 sudo ss -tlnp | grep 8000
 
+# 登录探测。先从 /opt/dbcheck/.env 确认初始密码。
+TOKEN=$(
+  curl -s http://127.0.0.1:8000/api/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"username":"admin","password":"admin"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["token"])'
+)
+
 # 接口探测
-curl -s http://127.0.0.1:8000/api/dashboard | python3 -m json.tool
+curl -s http://127.0.0.1:8000/api/dashboard \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -m json.tool
 ```
 
 浏览器访问 `http://<server-ip>:8000/`,应该看到 DBCheck 的工作台页面。
@@ -220,6 +230,11 @@ sudo vi /opt/dbcheck/.env
 # SQLite 数据库和 Fernet 密钥必须放在持久化 data 目录
 DBCHECK_SQLITE_PATH=/opt/dbcheck/data/dbcheck.db
 DBCHECK_FERNET_KEY_FILE=/opt/dbcheck/data/.fernet_key
+
+# 首次启动默认 DBA 账号；仅在 users 表为空时生效。
+DBCHECK_BOOTSTRAP_ADMIN_USERNAME=admin
+DBCHECK_BOOTSTRAP_ADMIN_DISPLAY_NAME=DBA Admin
+DBCHECK_BOOTSTRAP_ADMIN_PASSWORD=admin
 
 # 腾讯云 API 总开关,控制备份同步、慢 SQL 同步、监控、binlog 等所有主动云 API
 DBCHECK_TENCENT_API_ENABLED=true

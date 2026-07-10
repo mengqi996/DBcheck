@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import auth  # noqa: E402
 import storage  # noqa: E402
 
 
@@ -98,6 +99,49 @@ class InstanceStorageTests(unittest.TestCase):
         self.assertIsNotNone(internal)
         assert internal is not None
         self.assertEqual(internal["password"], "secret")
+
+    def test_init_db_bootstraps_default_admin_user(self) -> None:
+        users = storage.list_users()
+        self.assertEqual(len(users), 1)
+        self.assertEqual(users[0]["username"], auth.BOOTSTRAP_ADMIN_USERNAME)
+        self.assertEqual(users[0]["role"], auth.USER_ROLE_DBA)
+        self.assertTrue(users[0]["enabled"])
+        internal = storage.get_user(users[0]["id"], include_secret=True)
+        self.assertIsNotNone(internal)
+        assert internal is not None
+        self.assertTrue(
+            auth.verify_password(
+                auth.BOOTSTRAP_ADMIN_PASSWORD,
+                internal["password_salt"],
+                internal["password_hash"],
+            )
+        )
+
+    def test_user_session_round_trip(self) -> None:
+        salt_hex, password_hash = auth.hash_password("Password@123")
+        created = storage.create_user(
+            {
+                "username": "rd_user",
+                "display_name": "研发账号",
+                "password_salt": salt_hex,
+                "password_hash": password_hash,
+                "role": auth.USER_ROLE_RD,
+                "enabled": True,
+            }
+        )
+
+        token = auth.hash_session_token("token-123")
+        storage.create_user_session(created["id"], token, "2099-01-01 00:00:00")
+        session_user = storage.get_user_by_session_token_hash(token)
+
+        self.assertIsNotNone(session_user)
+        assert session_user is not None
+        self.assertEqual(session_user["username"], "rd_user")
+        self.assertEqual(session_user["role"], auth.USER_ROLE_RD)
+
+        deleted = storage.delete_user_sessions_for_user(created["id"])
+        self.assertEqual(deleted, 1)
+        self.assertIsNone(storage.get_user_by_session_token_hash(token))
 
 
 if __name__ == "__main__":

@@ -13,6 +13,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from auth import (
+    BOOTSTRAP_ADMIN_DISPLAY_NAME,
+    BOOTSTRAP_ADMIN_PASSWORD,
+    BOOTSTRAP_ADMIN_USERNAME,
+    USER_ROLE_DBA,
+    hash_password,
+)
+
 
 DB_PATH = Path(os.getenv("DBCHECK_SQLITE_PATH", Path(__file__).with_name("dbcheck.db")))
 SECONDS_PER_DAY = 86400
@@ -724,6 +732,35 @@ def _append_slow_sql_schema(script: str) -> str:
     return script + extra
 
 
+def _append_auth_schema(script: str) -> str:
+    extra = """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL,
+                password_salt TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+            CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
+    """
+    return script + extra
+
+
 def init_db() -> None:  # type: ignore[no-redef]
     with get_connection() as conn:
         base_script = """
@@ -774,13 +811,15 @@ def init_db() -> None:  # type: ignore[no-redef]
                 checked_at TEXT NOT NULL
             );
         """
-        conn.executescript(_append_slow_sql_schema(base_script))
+        conn.executescript(_append_auth_schema(_append_slow_sql_schema(base_script)))
         _ensure_backup_cloud_columns(conn)
         cleanup_orphan_slow_sql_state(conn)
         purge_old_slow_queries_with_conn(conn)
+        purge_expired_user_sessions_with_conn(conn)
         instance_count = conn.execute("SELECT COUNT(*) FROM instances").fetchone()[0]
         if instance_count == 0:
             seed_data(conn)
+        _ensure_default_admin(conn)
 
 
 def cleanup_orphan_slow_sql_state(conn: sqlite3.Connection) -> None:
@@ -840,6 +879,206 @@ def purge_old_slow_queries_with_conn(
 def purge_old_slow_queries(retention_days: Optional[int] = None) -> int:
     with get_connection() as conn:
         return purge_old_slow_queries_with_conn(conn, retention_days)
+
+
+def sanitize_user(row: sqlite3.Row) -> Dict[str, Any]:
+    data = dict(row)
+    data["enabled"] = bool(data.get("enabled"))
+    data.pop("password_salt", None)
+    data.pop("password_hash", None)
+    return data
+
+
+def internal_user(row: sqlite3.Row) -> Dict[str, Any]:
+    data = dict(row)
+    data["enabled"] = bool(data.get("enabled"))
+    return data
+
+
+def _ensure_default_admin(conn: sqlite3.Connection) -> None:
+    count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    if count:
+        return
+    ts = now()
+    salt_hex, hash_hex = hash_password(BOOTSTRAP_ADMIN_PASSWORD)
+    conn.execute(
+        """
+        INSERT INTO users (
+            username, display_name, password_salt, password_hash, role, enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        """,
+        (
+            BOOTSTRAP_ADMIN_USERNAME,
+            BOOTSTRAP_ADMIN_DISPLAY_NAME,
+            salt_hex,
+            hash_hex,
+            USER_ROLE_DBA,
+            ts,
+            ts,
+        ),
+    )
+
+
+def list_users() -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM users ORDER BY role, id").fetchall()
+    return [sanitize_user(row) for row in rows]
+
+
+def get_user(user_id: int, include_secret: bool = False) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        return None
+    return internal_user(row) if include_secret else sanitize_user(row)
+
+
+def get_user_by_username(username: str, include_secret: bool = False) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    if not row:
+        return None
+    return internal_user(row) if include_secret else sanitize_user(row)
+
+
+def create_user(payload: Dict[str, Any]) -> Dict[str, Any]:
+    ts = now()
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO users (
+                username, display_name, password_salt, password_hash, role, enabled, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["username"],
+                payload["display_name"],
+                payload["password_salt"],
+                payload["password_hash"],
+                payload["role"],
+                1 if payload.get("enabled", True) else 0,
+                ts,
+                ts,
+            ),
+        )
+        user_id = cursor.lastrowid
+    created = get_user(user_id)
+    assert created is not None
+    return created
+
+
+def update_user(user_id: int, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    field_map = {
+        "display_name": "display_name",
+        "role": "role",
+        "enabled": "enabled",
+        "password_salt": "password_salt",
+        "password_hash": "password_hash",
+    }
+    updates = []
+    params: List[Any] = []
+    for source, column in field_map.items():
+        if source not in payload or payload[source] is None:
+            continue
+        value = payload[source]
+        if source == "enabled":
+            value = 1 if value else 0
+        updates.append(f"{column} = ?")
+        params.append(value)
+    if not updates:
+        return get_user(user_id)
+    updates.append("updated_at = ?")
+    params.append(now())
+    params.append(user_id)
+    with get_connection() as conn:
+        cursor = conn.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        if cursor.rowcount == 0:
+            return None
+    return get_user(user_id)
+
+
+def delete_user(user_id: int) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return cursor.rowcount > 0
+
+
+def count_enabled_dba_users(exclude_user_id: Optional[int] = None) -> int:
+    clauses = ["role = ?", "enabled = 1"]
+    params: List[Any] = [USER_ROLE_DBA]
+    if exclude_user_id is not None:
+        clauses.append("id != ?")
+        params.append(exclude_user_id)
+    with get_connection() as conn:
+        row = conn.execute(
+            f"SELECT COUNT(*) AS c FROM users WHERE {' AND '.join(clauses)}",
+            params,
+        ).fetchone()
+    return int(row["c"] if row else 0)
+
+
+def create_user_session(user_id: int, token_hash: str, expires_at: str) -> None:
+    ts = now()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO user_sessions (token_hash, user_id, created_at, expires_at, last_seen_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (token_hash, user_id, ts, expires_at, ts),
+        )
+
+
+def get_user_by_session_token_hash(token_hash: str) -> Optional[Dict[str, Any]]:
+    purge_expired_user_sessions()
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT u.*, s.expires_at, s.last_seen_at, s.created_at AS session_created_at
+            FROM user_sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token_hash = ?
+              AND s.expires_at > ?
+              AND u.enabled = 1
+            """,
+            (token_hash, now()),
+        ).fetchone()
+    if not row:
+        return None
+    return internal_user(row)
+
+
+def touch_user_session(token_hash: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE user_sessions SET last_seen_at = ? WHERE token_hash = ?",
+            (now(), token_hash),
+        )
+
+
+def delete_user_session(token_hash: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM user_sessions WHERE token_hash = ?", (token_hash,))
+    return cursor.rowcount > 0
+
+
+def delete_user_sessions_for_user(user_id: int) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
+    return cursor.rowcount if cursor.rowcount > 0 else 0
+
+
+def purge_expired_user_sessions_with_conn(conn: sqlite3.Connection) -> int:
+    cursor = conn.execute("DELETE FROM user_sessions WHERE expires_at <= ?", (now(),))
+    return cursor.rowcount if cursor.rowcount > 0 else 0
+
+
+def purge_expired_user_sessions() -> int:
+    with get_connection() as conn:
+        return purge_expired_user_sessions_with_conn(conn)
 
 
 # ========== 凭证 CRUD ==========

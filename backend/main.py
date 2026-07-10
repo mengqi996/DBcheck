@@ -8,19 +8,28 @@ DBCheck backend service.
 import os
 import sqlite3
 import time
-import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
+from auth import (
+    USER_ROLE_DBA,
+    USER_ROLE_RD,
+    hash_password,
+    hash_session_token,
+    new_session_token,
+    session_expiry_iso,
+    verify_password,
+)
 from connectors import check_connectivity, execute_sql
 from models import (
     APIResponse,
+    AuthLoginRequest,
     BackupCreate,
     BackupStatus,
     BindingCreate,
@@ -44,6 +53,9 @@ from models import (
     TCCredentialResponse,
     TCCredentialUpdate,
     TCProduct,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
 )
 import scheduler as scheduler_mod
 import slow_query_service
@@ -56,18 +68,27 @@ from storage import (
     create_binding as repo_create_binding,
     create_credential as repo_create_credential,
     create_instance as repo_create_instance,
+    create_user as repo_create_user,
+    create_user_session as repo_create_user_session,
     create_quick_check_log,
+    count_enabled_dba_users,
     dashboard_summary,
     delete_backup as repo_delete_backup,
     delete_binding as repo_delete_binding,
     delete_credential as repo_delete_credential,
     delete_instance as repo_delete_instance,
+    delete_user as repo_delete_user,
+    delete_user_session as repo_delete_user_session,
+    delete_user_sessions_for_user,
     get_backup as repo_get_backup,
     get_binding as repo_get_binding,
     get_credential as repo_get_credential,
     get_instance as repo_get_instance,
     get_slow_query as repo_get_slow_query,
     get_sync_state as repo_get_sync_state,
+    get_user as repo_get_user,
+    get_user_by_session_token_hash,
+    get_user_by_username,
     init_db,
     list_backups,
     list_bindings,
@@ -76,12 +97,15 @@ from storage import (
     list_instances,
     list_slow_queries,
     list_slow_queries_by_fingerprint,
+    list_users,
     slow_query_stats,
     slow_query_timeseries,
+    touch_user_session,
     top_slow_fingerprints,
     update_binding as repo_update_binding,
     update_credential as repo_update_credential,
     update_instance as repo_update_instance,
+    update_user as repo_update_user,
     update_instance_check,
 )
 from tc_client import TCClient, TencentCloudSDKException
@@ -213,22 +237,154 @@ app.add_middleware(
 )
 
 
+@app.post("/api/auth/login", response_model=APIResponse)
+def login(payload: AuthLoginRequest):
+    user = get_user_by_username(payload.username, include_secret=True)
+    if not user or not bool(user.get("enabled")):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
+    if not verify_password(payload.password, user["password_salt"], user["password_hash"]):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
+
+    token = new_session_token()
+    repo_create_user_session(user["id"], hash_session_token(token), session_expiry_iso())
+    return success(
+        message="登录成功",
+        data={
+            "token": token,
+            "user": _user_response(user).model_dump(),
+        },
+    )
+
+
+@app.get("/api/auth/me", response_model=APIResponse)
+def auth_me(request: Request):
+    user = require_authenticated_user(request)
+    return success(data={"user": _user_response(user).model_dump()})
+
+
+@app.post("/api/auth/logout", response_model=APIResponse)
+def logout(request: Request):
+    token = _extract_bearer_token(request)
+    if token:
+        repo_delete_user_session(hash_session_token(token))
+    return success(message="已退出登录")
+
+
+@app.get("/api/users", response_model=APIResponse)
+def list_user_accounts(request: Request):
+    require_dba_user(request)
+    rows = [_user_response(row).model_dump() for row in list_users()]
+    return success(data={"total": len(rows), "items": rows})
+
+
+@app.post("/api/users", response_model=APIResponse)
+def create_user_account(request: Request, payload: UserCreate):
+    require_dba_user(request)
+    data = payload.model_dump(mode="json")
+    salt_hex, password_hash = hash_password(data.pop("password"))
+    data["password_salt"] = salt_hex
+    data["password_hash"] = password_hash
+    try:
+        created = repo_create_user(data)
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="用户名已存在")
+    return success(message="用户已创建", data={"user": _user_response(created).model_dump()}, code=201)
+
+
+@app.put("/api/users/{user_id}", response_model=APIResponse)
+def update_user_account(request: Request, user_id: int, payload: UserUpdate):
+    current = require_dba_user(request)
+    data = payload.model_dump(mode="json", exclude_unset=True)
+    password = data.pop("password", None)
+    if password:
+        salt_hex, password_hash = hash_password(password)
+        data["password_salt"] = salt_hex
+        data["password_hash"] = password_hash
+    if user_id == current["id"] and data.get("enabled") is False:
+        raise HTTPException(status_code=400, detail="不能停用当前登录账号")
+    if user_id == current["id"] and data.get("role") == USER_ROLE_RD and count_enabled_dba_users(exclude_user_id=user_id) == 0:
+        raise HTTPException(status_code=400, detail="至少需要保留一个启用中的 DBA 账号")
+    updated = repo_update_user(user_id, data)
+    if not updated:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if password or "enabled" in data or "role" in data:
+        delete_user_sessions_for_user(user_id)
+    return success(message="用户已更新", data={"user": _user_response(updated).model_dump()})
+
+
+@app.delete("/api/users/{user_id}", response_model=APIResponse)
+def delete_user_account(request: Request, user_id: int):
+    current = require_dba_user(request)
+    user = repo_get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if user_id == current["id"]:
+        raise HTTPException(status_code=400, detail="不能删除当前登录账号")
+    if user["role"] == USER_ROLE_DBA and user["enabled"] and count_enabled_dba_users(exclude_user_id=user_id) == 0:
+        raise HTTPException(status_code=400, detail="至少需要保留一个启用中的 DBA 账号")
+    delete_user_sessions_for_user(user_id)
+    if not repo_delete_user(user_id):
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return success(message="用户已删除")
+
+
 def success(message: str = "success", data: Optional[dict] = None, code: int = 200) -> APIResponse:
     return APIResponse(code=code, message=message, data=data)
 
 
+def _user_response(row: dict) -> UserResponse:
+    return UserResponse(
+        id=row["id"],
+        username=row["username"],
+        display_name=row["display_name"],
+        role=row["role"],
+        enabled=bool(row["enabled"]),
+        created_at=row.get("created_at"),
+        updated_at=row.get("updated_at"),
+    )
+
+
+def _extract_bearer_token(request: Request) -> Optional[str]:
+    header = request.headers.get("Authorization") or ""
+    if not header.startswith("Bearer "):
+        return None
+    token = header[7:].strip()
+    return token or None
+
+
+def require_authenticated_user(request: Request) -> dict:
+    token = _extract_bearer_token(request)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请先登录")
+    user = get_user_by_session_token_hash(hash_session_token(token))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已过期，请重新登录")
+    touch_user_session(hash_session_token(token))
+    return user
+
+
+def require_dba_user(request: Request) -> dict:
+    user = require_authenticated_user(request)
+    if user["role"] != USER_ROLE_DBA:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前账号无管理权限")
+    return user
+
+
 @app.get("/api/dashboard", response_model=APIResponse)
-def get_dashboard():
+def get_dashboard(request: Request):
     """获取运维工作台汇总数据。"""
+    require_authenticated_user(request)
     return success(data=dashboard_summary())
 
 
 @app.get("/api/instances", response_model=APIResponse)
 def get_instances(
+    request: Request,
     status: InstanceStatus = Query(None, description="按状态筛选"),
     db_type: DBType = Query(None, description="按数据库类型筛选"),
     keyword: str = Query(None, description="搜索关键词(名称/主机/负责人)"),
 ):
+    require_authenticated_user(request)
     items = list_instances(
         status=status.value if status else None,
         db_type=db_type.value if db_type else None,
@@ -238,7 +394,8 @@ def get_instances(
 
 
 @app.get("/api/instances/{instance_id}", response_model=APIResponse)
-def get_instance(instance_id: int):
+def get_instance(request: Request, instance_id: int):
+    require_authenticated_user(request)
     instance = repo_get_instance(instance_id)
     if not instance:
         raise HTTPException(status_code=404, detail="实例不存在")
@@ -246,7 +403,8 @@ def get_instance(instance_id: int):
 
 
 @app.post("/api/instances", response_model=APIResponse)
-def create_instance(instance: InstanceCreate):
+def create_instance(request: Request, instance: InstanceCreate):
+    require_dba_user(request)
     try:
         created = repo_create_instance(instance.model_dump(mode="json"))
     except sqlite3.IntegrityError:
@@ -255,7 +413,8 @@ def create_instance(instance: InstanceCreate):
 
 
 @app.put("/api/instances/{instance_id}", response_model=APIResponse)
-def update_instance(instance_id: int, instance: InstanceUpdate):
+def update_instance(request: Request, instance_id: int, instance: InstanceUpdate):
+    require_dba_user(request)
     try:
         updated = repo_update_instance(
             instance_id,
@@ -269,7 +428,8 @@ def update_instance(instance_id: int, instance: InstanceUpdate):
 
 
 @app.delete("/api/instances/{instance_id}", response_model=APIResponse)
-def delete_instance(instance_id: int):
+def delete_instance(request: Request, instance_id: int):
+    require_dba_user(request)
     if not repo_delete_instance(instance_id):
         raise HTTPException(status_code=404, detail="实例不存在")
     return success(message="实例删除成功")
@@ -414,9 +574,11 @@ def _check_instance(
 
 @app.post("/api/instances/{instance_id}/check", response_model=APIResponse)
 def check_instance_connection(
+    request: Request,
     instance_id: int,
     password: str = Query(None, description="临时覆盖数据库密码"),
 ):
+    require_dba_user(request)
     instance = repo_get_instance(instance_id, include_secret=True)
     if not instance:
         raise HTTPException(status_code=404, detail="实例不存在")
@@ -443,7 +605,8 @@ def check_instance_connection(
 
 
 @app.post("/api/connectivity-check", response_model=ConnectivityCheckResponse)
-def connectivity_check(request: ConnectivityCheckRequest):
+def connectivity_check(http_request: Request, request: ConnectivityCheckRequest):
+    require_dba_user(http_request)
     result = check_connectivity(
         db_type=request.db_type,
         host=request.host,
@@ -465,7 +628,11 @@ def connectivity_check(request: ConnectivityCheckRequest):
 
 
 @app.post("/api/instances/batch-check", response_model=APIResponse)
-def batch_check_instances(password: str = Query(None, description="临时覆盖数据库密码")):
+def batch_check_instances(
+    request: Request,
+    password: str = Query(None, description="临时覆盖数据库密码"),
+):
+    require_dba_user(request)
     results = []
     cloud_cache: dict[tuple[Any, ...], Any] = {}
     for instance in list_instances():
@@ -494,17 +661,20 @@ def batch_check_instances(password: str = Query(None, description="临时覆盖�
 
 
 @app.get("/api/check-logs", response_model=APIResponse)
-def get_check_logs(limit: int = Query(20, ge=1, le=100)):
+def get_check_logs(request: Request, limit: int = Query(20, ge=1, le=100)):
+    require_authenticated_user(request)
     logs = list_check_logs(limit)
     return success(data={"total": len(logs), "items": logs})
 
 
 @app.get("/api/backups", response_model=APIResponse)
 def get_backups(
+    request: Request,
     status: BackupStatus = Query(None, description="按状态筛选"),
     instance_id: int = Query(None, description="按实例ID筛选"),
     keyword: str = Query(None, description="搜索关键词(名称/实例)"),
 ):
+    require_authenticated_user(request)
     items = list_backups(
         status=status.value if status else None,
         instance_id=instance_id,
@@ -515,8 +685,10 @@ def get_backups(
 
 @app.post("/api/backups/sync-tencent", response_model=APIResponse)
 def sync_tencent_backups_endpoint(
+    request: Request,
     instance_id: int = Query(None, description="仅同步指定本地实例 ID"),
 ):
+    require_dba_user(request)
     ensure_tencent_api_enabled("腾讯云备份同步")
     result = backup_service.sync_tencent_backups(instance_id=instance_id)
     message = (
@@ -528,7 +700,8 @@ def sync_tencent_backups_endpoint(
 
 
 @app.get("/api/backups/{backup_id}", response_model=APIResponse)
-def get_backup(backup_id: int):
+def get_backup(request: Request, backup_id: int):
+    require_authenticated_user(request)
     backup = repo_get_backup(backup_id)
     if not backup:
         raise HTTPException(status_code=404, detail="备份记录不存在")
@@ -536,7 +709,8 @@ def get_backup(backup_id: int):
 
 
 @app.post("/api/backups", response_model=APIResponse)
-def create_backup(backup: BackupCreate):
+def create_backup(request: Request, backup: BackupCreate):
+    require_dba_user(request)
     cloud_backup_skipped = False
     bound_to_tencent = any(
         item.get("tc_product") in {"cdb", "cynosdb", "postgres"}
@@ -578,7 +752,8 @@ def create_backup(backup: BackupCreate):
 
 
 @app.delete("/api/backups/{backup_id}", response_model=APIResponse)
-def delete_backup(backup_id: int):
+def delete_backup(request: Request, backup_id: int):
+    require_dba_user(request)
     if not repo_delete_backup(backup_id):
         raise HTTPException(status_code=404, detail="备份记录不存在")
     return success(message="备份记录已删除")
@@ -586,11 +761,13 @@ def delete_backup(backup_id: int):
 
 @app.get("/api/binlogs", response_model=APIResponse)
 def list_binlogs_endpoint(
+    request: Request,
     binding_id: int = Query(..., description="绑定 ID"),
     start_time: str = Query(None, description="开始时间 YYYY-MM-DD HH:MM:SS"),
     end_time: str = Query(None, description="结束时间 YYYY-MM-DD HH:MM:SS"),
     limit: int = Query(200, ge=1, le=1000),
 ):
+    require_authenticated_user(request)
     binding = repo_get_binding(binding_id)
     if not binding:
         raise HTTPException(status_code=404, detail="绑定不存在")
@@ -611,7 +788,8 @@ def list_binlogs_endpoint(
 
 
 @app.get("/api/binlogs/bindings", response_model=APIResponse)
-def list_binlog_bindings_endpoint():
+def list_binlog_bindings_endpoint(request: Request):
+    require_authenticated_user(request)
     data = binlog_service.list_binlog_bindings()
     enriched = []
     for row in data["items"]:
@@ -631,9 +809,11 @@ def _content_disposition(filename: str) -> str:
 
 @app.get("/api/binlogs/download")
 def download_binlog_endpoint(
+    request: Request,
     binding_id: int = Query(..., description="绑定 ID"),
     binlog_id: str = Query(..., description="Binlog ID"),
 ):
+    require_authenticated_user(request)
     binding = repo_get_binding(binding_id)
     if not binding:
         raise HTTPException(status_code=404, detail="绑定不存在")
@@ -660,9 +840,11 @@ def download_binlog_endpoint(
 
 @app.get("/api/binlogs/download-url", response_model=APIResponse)
 def binlog_download_url_endpoint(
+    request: Request,
     binding_id: int = Query(..., description="绑定 ID"),
     binlog_id: str = Query(..., description="Binlog ID"),
 ):
+    require_authenticated_user(request)
     binding = repo_get_binding(binding_id)
     if not binding:
         raise HTTPException(status_code=404, detail="绑定不存在")
@@ -678,14 +860,17 @@ def binlog_download_url_endpoint(
 
 
 @app.get("/api/monitor/bindings", response_model=APIResponse)
-def list_monitor_bindings_endpoint():
+def list_monitor_bindings_endpoint(request: Request):
+    require_authenticated_user(request)
     return success(data=monitor_service.list_monitor_bindings())
 
 
 @app.get("/api/monitor/metrics", response_model=APIResponse)
 def list_monitor_metrics_endpoint(
+    request: Request,
     binding_id: int = Query(..., description="腾讯云绑定 ID"),
 ):
+    require_authenticated_user(request)
     ensure_tencent_api_enabled("腾讯云监控指标查询")
     try:
         data = monitor_service.list_metrics(binding_id)
@@ -699,7 +884,8 @@ def list_monitor_metrics_endpoint(
 
 
 @app.post("/api/monitor/data", response_model=APIResponse)
-def get_monitor_data_endpoint(request: MonitorDataRequest):
+def get_monitor_data_endpoint(http_request: Request, request: MonitorDataRequest):
+    require_authenticated_user(http_request)
     ensure_tencent_api_enabled("腾讯云监控数据查询")
     try:
         data = monitor_service.get_metric_data(
@@ -721,7 +907,8 @@ def get_monitor_data_endpoint(request: MonitorDataRequest):
 
 
 @app.post("/api/sql/execute", response_model=SQLExecuteResponse)
-def sql_execute(request: SQLExecuteRequest):
+def sql_execute(http_request: Request, request: SQLExecuteRequest):
+    require_authenticated_user(http_request)
     instance = repo_get_instance(request.instance_id, include_secret=True)
     if not instance:
         return SQLExecuteResponse(success=False, message="实例不存在")
@@ -755,13 +942,15 @@ def _to_credential_response(row: dict) -> TCCredentialResponse:
 
 
 @app.get("/api/tc/credentials", response_model=APIResponse)
-def list_tc_credentials():
+def list_tc_credentials(request: Request):
+    require_dba_user(request)
     rows = list_credentials()
     return success(data={"total": len(rows), "items": [_to_credential_response(r).model_dump() for r in rows]})
 
 
 @app.post("/api/tc/credentials", response_model=APIResponse)
-def create_tc_credential(payload: TCCredentialCreate):
+def create_tc_credential(request: Request, payload: TCCredentialCreate):
+    require_dba_user(request)
     try:
         encrypted = encrypt_secret(payload.secret_key)
         created = repo_create_credential(payload.model_dump(mode="json"), encrypted)
@@ -771,7 +960,8 @@ def create_tc_credential(payload: TCCredentialCreate):
 
 
 @app.put("/api/tc/credentials/{credential_id}", response_model=APIResponse)
-def update_tc_credential(credential_id: int, payload: TCCredentialUpdate):
+def update_tc_credential(request: Request, credential_id: int, payload: TCCredentialUpdate):
+    require_dba_user(request)
     data = payload.model_dump(mode="json", exclude_unset=True)
     encrypted = encrypt_secret(data["secret_key"]) if data.get("secret_key") else None
     data.pop("secret_key", None)
@@ -785,16 +975,18 @@ def update_tc_credential(credential_id: int, payload: TCCredentialUpdate):
 
 
 @app.delete("/api/tc/credentials/{credential_id}", response_model=APIResponse)
-def delete_tc_credential(credential_id: int):
+def delete_tc_credential(request: Request, credential_id: int):
+    require_dba_user(request)
     if not repo_delete_credential(credential_id):
         raise HTTPException(status_code=404, detail="凭证不存在")
     return success(message="凭证已删除")
 
 
 @app.post("/api/tc/credentials/{credential_id}/test", response_model=APIResponse)
-def test_tc_credential(credential_id: int):
+def test_tc_credential(request: Request, credential_id: int):
     from crypto import decrypt as decrypt_secret
 
+    require_dba_user(request)
     ensure_tencent_api_enabled("腾讯云凭证测试")
     cred = repo_get_credential(credential_id, include_secret=True)
     if not cred:
@@ -1053,7 +1245,8 @@ def _import_discovered_instance(item: dict, payload: TCDiscoveryRequest) -> dict
 
 
 @app.get("/api/bindings", response_model=APIResponse)
-def list_tc_bindings(instance_id: int = Query(None)):
+def list_tc_bindings(request: Request, instance_id: int = Query(None)):
+    require_authenticated_user(request)
     rows = list_bindings(instance_id=instance_id)
     # 补同步状态
     enriched = []
@@ -1065,7 +1258,8 @@ def list_tc_bindings(instance_id: int = Query(None)):
 
 
 @app.post("/api/bindings", response_model=APIResponse)
-def create_tc_binding(payload: BindingCreate):
+def create_tc_binding(request: Request, payload: BindingCreate):
+    require_dba_user(request)
     # 校验 instance 与 credential 必须存在
     if not repo_get_instance(payload.instance_id):
         raise HTTPException(status_code=404, detail="实例不存在，请先在实例列表录入")
@@ -1079,7 +1273,8 @@ def create_tc_binding(payload: BindingCreate):
 
 
 @app.put("/api/bindings/{binding_id}", response_model=APIResponse)
-def update_tc_binding(binding_id: int, payload: BindingUpdate):
+def update_tc_binding(request: Request, binding_id: int, payload: BindingUpdate):
+    require_dba_user(request)
     data = payload.model_dump(mode="json", exclude_unset=True)
     updated = repo_update_binding(binding_id, data)
     if not updated:
@@ -1088,14 +1283,16 @@ def update_tc_binding(binding_id: int, payload: BindingUpdate):
 
 
 @app.delete("/api/bindings/{binding_id}", response_model=APIResponse)
-def delete_tc_binding(binding_id: int):
+def delete_tc_binding(request: Request, binding_id: int):
+    require_dba_user(request)
     if not repo_delete_binding(binding_id):
         raise HTTPException(status_code=404, detail="绑定不存在")
     return success(message="绑定已删除")
 
 
 @app.post("/api/tc/discovery/instances", response_model=APIResponse)
-def discover_tc_instances(payload: TCDiscoveryRequest):
+def discover_tc_instances(request: Request, payload: TCDiscoveryRequest):
+    require_dba_user(request)
     items, errors = _discover_instances_from_tc(payload)
     return success(
         data={
@@ -1107,7 +1304,8 @@ def discover_tc_instances(payload: TCDiscoveryRequest):
 
 
 @app.post("/api/tc/discovery/import", response_model=APIResponse)
-def import_tc_instances(payload: TCDiscoveryRequest):
+def import_tc_instances(request: Request, payload: TCDiscoveryRequest):
+    require_dba_user(request)
     items, errors = _discover_instances_from_tc(payload)
     results = [_import_discovered_instance(item, payload) for item in items]
     summary: dict[str, int] = {}
@@ -1126,6 +1324,7 @@ def import_tc_instances(payload: TCDiscoveryRequest):
 
 @app.get("/api/slow-queries", response_model=APIResponse)
 def list_slow_queries_endpoint(
+    request: Request,
     instance_id: int = Query(None),
     tc_product: str = Query(None),
     tc_region: str = Query(None),
@@ -1138,6 +1337,7 @@ def list_slow_queries_endpoint(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
 ):
+    require_authenticated_user(request)
     if tc_product and tc_product not in SLOW_QUERY_PRODUCTS:
         raise HTTPException(status_code=400, detail="不支持的慢查询来源类型")
     result = list_slow_queries(
@@ -1160,11 +1360,13 @@ def list_slow_queries_endpoint(
 # 否则 FastAPI 会把 stats/timeseries/top 当作 slow_query_id 拦截。
 @app.get("/api/slow-queries/stats", response_model=APIResponse)
 def slow_query_stats_endpoint(
+    request: Request,
     instance_id: int = Query(None),
     start_ts: int = Query(None),
     end_ts: int = Query(None),
     top_limit: int = Query(10, ge=1, le=100),
 ):
+    require_authenticated_user(request)
     stats = slow_query_stats(
         instance_id=instance_id,
         start_ts=start_ts,
@@ -1176,11 +1378,13 @@ def slow_query_stats_endpoint(
 
 @app.get("/api/slow-queries/timeseries", response_model=APIResponse)
 def slow_query_timeseries_endpoint(
+    request: Request,
     instance_id: int = Query(None),
     start_ts: int = Query(None),
     end_ts: int = Query(None),
     bucket: str = Query("hour"),
 ):
+    require_authenticated_user(request)
     if bucket not in ("hour", "day"):
         raise HTTPException(status_code=400, detail="bucket 必须是 hour 或 day")
     rows = slow_query_timeseries(
@@ -1194,16 +1398,22 @@ def slow_query_timeseries_endpoint(
 
 @app.get("/api/slow-queries/top", response_model=APIResponse)
 def slow_query_top_endpoint(
+    request: Request,
     instance_id: int = Query(None),
     start_ts: int = Query(None),
     end_ts: int = Query(None),
     limit: int = Query(10, ge=1, le=100),
 ):
+    require_authenticated_user(request)
     return success(data={"items": top_slow_fingerprints(instance_id, start_ts, end_ts, limit)})
 
 
 @app.post("/api/slow-queries/refresh", response_model=APIResponse)
-async def refresh_slow_queries(instance_id: int = Query(None, description="仅采集指定自建实例 ID")):
+async def refresh_slow_queries(
+    request: Request,
+    instance_id: int = Query(None, description="仅采集指定自建实例 ID"),
+):
+    require_dba_user(request)
     self_hosted = await to_thread(
         slow_query_service.poll_all_self_hosted,
         instance_id,
@@ -1235,7 +1445,8 @@ async def refresh_slow_queries(instance_id: int = Query(None, description="仅�
 
 
 @app.get("/api/slow-queries/{slow_query_id}", response_model=APIResponse)
-def get_slow_query_endpoint(slow_query_id: int):
+def get_slow_query_endpoint(request: Request, slow_query_id: int):
+    require_authenticated_user(request)
     row = repo_get_slow_query(slow_query_id)
     if not row:
         raise HTTPException(status_code=404, detail="慢查询不存在")
@@ -1245,7 +1456,8 @@ def get_slow_query_endpoint(slow_query_id: int):
 
 
 @app.post("/api/slow-queries/{slow_query_id}/explain", response_model=ExplainResponse)
-def explain_slow_query(slow_query_id: int):
+def explain_slow_query(request: Request, slow_query_id: int):
+    require_authenticated_user(request)
     row = repo_get_slow_query(slow_query_id)
     if not row:
         return ExplainResponse(success=False, message="慢查询不存在")
@@ -1277,7 +1489,8 @@ def explain_slow_query(slow_query_id: int):
 
 
 @app.get("/api/scheduler/status", response_model=APIResponse)
-def scheduler_status_endpoint():
+def scheduler_status_endpoint(request: Request):
+    require_authenticated_user(request)
     sched: scheduler_mod.SlowQueryScheduler = app.state.scheduler
     data = sched.status()
     data["tencent_api_enabled"] = TENCENT_API_ENABLED

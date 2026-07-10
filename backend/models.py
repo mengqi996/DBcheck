@@ -98,6 +98,50 @@ class APIResponse(BaseModel):
     data: Optional[dict] = Field(None, description="数据")
 
 
+class UserRole(str, Enum):
+    """系统角色"""
+    DBA = "dba"
+    RD = "rd"
+
+
+class AuthLoginRequest(BaseModel):
+    """登录请求"""
+    username: str = Field(..., min_length=1, description="用户名")
+    password: str = Field(..., min_length=1, description="密码")
+
+
+class UserBase(BaseModel):
+    """用户基础模型"""
+    username: str = Field(..., min_length=1, max_length=64, description="用户名")
+    display_name: str = Field(..., min_length=1, max_length=64, description="显示名")
+    role: UserRole = Field(..., description="角色")
+    enabled: bool = Field(True, description="是否启用")
+
+
+class UserCreate(UserBase):
+    """创建用户请求"""
+    password: str = Field(..., min_length=1, description="初始密码")
+
+
+class UserUpdate(BaseModel):
+    """更新用户请求"""
+    display_name: Optional[str] = Field(None, min_length=1, max_length=64)
+    role: Optional[UserRole] = None
+    enabled: Optional[bool] = None
+    password: Optional[str] = Field(None, min_length=1, description="为空则保留原密码")
+
+
+class UserResponse(BaseModel):
+    """用户响应"""
+    id: int
+    username: str
+    display_name: str
+    role: UserRole
+    enabled: bool
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 # ========== 备份相关模型 ==========
 
 class BackupType(str, Enum):

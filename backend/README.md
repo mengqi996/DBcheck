@@ -5,6 +5,7 @@
 ## 已实现功能
 
 - 实例资产管理：查询、新增、编辑、删除
+- 登录认证与用户管理：默认管理员启动引导、DBA/RD 角色、会话过期
 - 实例字段：类型、地址、端口、用户名、数据库名/服务名、环境、负责人、备注
 - 连通性检测：单实例检测、批量检测、快速检测
 - 检测日志：保存每次检测结果、耗时和错误信息
@@ -46,6 +47,23 @@ backend/dbcheck.db
 ```
 
 这是 SQLite 数据库文件，里面保存实例、备份和检测日志。
+
+首次启动会自动创建默认 DBA 账号：
+
+```text
+用户名：admin
+密码：admin
+```
+
+生产环境请在第一次登录后立即修改默认密码，或通过环境变量指定启动引导账号：
+
+```env
+DBCHECK_BOOTSTRAP_ADMIN_USERNAME=admin
+DBCHECK_BOOTSTRAP_ADMIN_DISPLAY_NAME=DBA Admin
+DBCHECK_BOOTSTRAP_ADMIN_PASSWORD=admin
+DBCHECK_SESSION_TTL_SECONDS=43200
+DBCHECK_PASSWORD_ITERATIONS=200000
+```
 
 生产环境建议固定到 `/opt/dbcheck/data`，避免服务重启或代码更新时读到
 `/opt/dbcheck/app` 下的临时/旧数据库：
@@ -125,6 +143,13 @@ http://127.0.0.1:8000/docs
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| POST | `/api/auth/login` | 登录并获取会话 token |
+| GET | `/api/auth/me` | 获取当前登录用户 |
+| POST | `/api/auth/logout` | 退出登录 |
+| GET | `/api/users` | 用户列表（DBA） |
+| POST | `/api/users` | 创建用户（DBA） |
+| PUT | `/api/users/{id}` | 更新用户（DBA） |
+| DELETE | `/api/users/{id}` | 删除用户（DBA） |
 | GET | `/api/dashboard` | 工作台汇总 |
 | GET | `/api/instances` | 获取实例列表 |
 | GET | `/api/instances/{id}` | 获取单个实例 |
@@ -181,7 +206,7 @@ curl -X POST http://127.0.0.1:8000/api/sql/execute \
 
 ## 当前限制
 
-- 还没有登录、权限、审计审批和多用户能力。
+- 已有登录、DBA/RD 权限和多用户能力，但还没有审计审批能力。
 - 实例密码以明文保存在本地 SQLite 中，只适合本地演示或内网原型。
 - 备份任务目前是记录层面的模拟任务，没有真正调用 `mysqldump`、`pg_dump` 等工具。
 - SQL 查询只做基础只读前缀限制，生产环境还需要更严格的 SQL 解析、权限控制和脱敏。

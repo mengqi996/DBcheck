@@ -35,6 +35,12 @@
             font-size: 14px;
         }
 
+        body.auth-locked {
+            min-width: 0;
+            overflow: hidden;
+            background: #08131c;
+        }
+
         button, input, select, textarea {
             font: inherit;
         }
@@ -47,6 +53,10 @@
             display: grid;
             grid-template-columns: 244px 1fr;
             min-height: 100vh;
+        }
+
+        .app.hidden {
+            display: none;
         }
 
         .sidebar {
@@ -211,6 +221,25 @@
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+
+        .topbar-user {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .user-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 10px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: #fff;
+            color: var(--text);
         }
 
         .content {
@@ -868,6 +897,519 @@
             padding: 18px;
         }
 
+        .login-helper {
+            margin: 0 0 16px;
+            color: rgba(229, 238, 244, 0.72);
+            line-height: 1.6;
+        }
+
+        .login-error {
+            min-height: 20px;
+            margin-top: 10px;
+            color: #ff9f93;
+            font-size: 13px;
+        }
+
+        .login-screen {
+            position: fixed;
+            inset: 0;
+            z-index: 120;
+            display: none;
+            align-items: stretch;
+            justify-content: center;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 18% 20%, rgba(24, 96, 114, 0.26), transparent 26%),
+                radial-gradient(circle at 82% 24%, rgba(42, 110, 154, 0.18), transparent 24%),
+                radial-gradient(circle at 72% 78%, rgba(18, 131, 126, 0.16), transparent 20%),
+                linear-gradient(135deg, #06111a 0%, #0a1621 48%, #0d1d2a 100%);
+        }
+
+        body.auth-locked .login-screen {
+            display: flex;
+        }
+
+        .login-screen.show {
+            display: flex;
+        }
+
+        .login-screen::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(rgba(111, 159, 180, 0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(111, 159, 180, 0.06) 1px, transparent 1px);
+            background-size: 72px 72px;
+            mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.25));
+            pointer-events: none;
+        }
+
+        .login-screen::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(5, 10, 14, 0.08), rgba(5, 10, 14, 0.52));
+            pointer-events: none;
+        }
+
+        .login-stage {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .bg-panel {
+            position: absolute;
+            border: 1px solid rgba(114, 174, 194, 0.18);
+            border-radius: 8px;
+            background: linear-gradient(180deg, rgba(8, 24, 34, 0.7), rgba(7, 18, 28, 0.46));
+            box-shadow: inset 0 0 0 1px rgba(150, 215, 230, 0.03);
+            backdrop-filter: blur(8px);
+            overflow: hidden;
+        }
+
+        .bg-panel::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(101, 218, 216, 0.12), transparent);
+            transform: translateX(-120%);
+            animation: loginShimmer 7s linear infinite;
+        }
+
+        .bg-panel::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(rgba(108, 165, 187, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(108, 165, 187, 0.05) 1px, transparent 1px);
+            background-size: 24px 24px;
+            opacity: 0.35;
+        }
+
+        .panel-metrics {
+            top: 10%;
+            left: 7%;
+            width: 300px;
+            height: 210px;
+            padding: 20px;
+            animation: loginFloatA 15s ease-in-out infinite;
+        }
+
+        .panel-trend {
+            top: 14%;
+            right: 8%;
+            width: 360px;
+            height: 236px;
+            padding: 20px;
+            animation: loginFloatB 18s ease-in-out infinite;
+        }
+
+        .panel-table {
+            left: 9%;
+            bottom: 12%;
+            width: 420px;
+            height: 250px;
+            padding: 18px;
+            animation: loginFloatC 17s ease-in-out infinite;
+        }
+
+        .panel-flow {
+            right: 12%;
+            bottom: 15%;
+            width: 380px;
+            height: 240px;
+            padding: 18px;
+            animation: loginFloatA 19s ease-in-out infinite;
+        }
+
+        .panel-db {
+            left: 50%;
+            bottom: 11%;
+            width: 210px;
+            height: 180px;
+            margin-left: -105px;
+            padding: 18px;
+            animation: loginFloatB 16s ease-in-out infinite;
+        }
+
+        .panel-header-line {
+            position: relative;
+            z-index: 1;
+            width: 38%;
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(137, 228, 224, 0.3);
+            margin-bottom: 18px;
+        }
+
+        .metric-cards,
+        .table-rows,
+        .db-stacks {
+            position: relative;
+            z-index: 1;
+        }
+
+        .metric-cards {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .metric-card {
+            padding: 14px 12px;
+            border: 1px solid rgba(104, 163, 182, 0.16);
+            border-radius: 8px;
+            background: rgba(9, 23, 34, 0.42);
+        }
+
+        .metric-card strong,
+        .metric-card span,
+        .metric-card i {
+            display: block;
+            border-radius: 999px;
+        }
+
+        .metric-card strong {
+            width: 62%;
+            height: 8px;
+            background: rgba(185, 235, 234, 0.76);
+            margin-bottom: 12px;
+        }
+
+        .metric-card span {
+            width: 82%;
+            height: 26px;
+            background: linear-gradient(90deg, rgba(78, 193, 189, 0.5), rgba(58, 127, 210, 0.4));
+            margin-bottom: 10px;
+        }
+
+        .metric-card i {
+            width: 48%;
+            height: 6px;
+            background: rgba(150, 196, 209, 0.3);
+        }
+
+        .trend-chart,
+        .flow-graph {
+            position: relative;
+            z-index: 1;
+            height: calc(100% - 30px);
+        }
+
+        .chart-bars {
+            position: absolute;
+            inset: 54px 18px 28px;
+            display: flex;
+            align-items: flex-end;
+            gap: 18px;
+        }
+
+        .chart-bars span {
+            flex: 1;
+            border-radius: 6px 6px 0 0;
+            background: linear-gradient(180deg, rgba(97, 234, 225, 0.72), rgba(47, 112, 203, 0.18));
+            animation: loginBars 4.8s ease-in-out infinite;
+            transform-origin: bottom;
+        }
+
+        .chart-bars span:nth-child(1) { height: 34%; animation-delay: 0.2s; }
+        .chart-bars span:nth-child(2) { height: 60%; animation-delay: 0.8s; }
+        .chart-bars span:nth-child(3) { height: 48%; animation-delay: 1.4s; }
+        .chart-bars span:nth-child(4) { height: 78%; animation-delay: 2s; }
+        .chart-bars span:nth-child(5) { height: 56%; animation-delay: 2.6s; }
+        .chart-bars span:nth-child(6) { height: 86%; animation-delay: 3.2s; }
+
+        .chart-line {
+            position: absolute;
+            inset: 44px 18px 38px;
+        }
+
+        .chart-line i {
+            position: absolute;
+            display: block;
+            height: 2px;
+            border-radius: 999px;
+            background: rgba(146, 244, 239, 0.9);
+            box-shadow: 0 0 18px rgba(97, 227, 223, 0.28);
+        }
+
+        .chart-line i:nth-child(1) {
+            left: 6%;
+            top: 67%;
+            width: 24%;
+            transform: rotate(-13deg);
+        }
+
+        .chart-line i:nth-child(2) {
+            left: 28%;
+            top: 58%;
+            width: 21%;
+            transform: rotate(10deg);
+        }
+
+        .chart-line i:nth-child(3) {
+            left: 47%;
+            top: 50%;
+            width: 18%;
+            transform: rotate(-24deg);
+        }
+
+        .chart-line i:nth-child(4) {
+            left: 63%;
+            top: 37%;
+            width: 24%;
+            transform: rotate(17deg);
+        }
+
+        .chart-line b {
+            position: absolute;
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #e5fffd;
+            box-shadow: 0 0 0 6px rgba(92, 220, 215, 0.14);
+            animation: loginPulse 3.2s ease-in-out infinite;
+        }
+
+        .chart-line b:nth-child(5) { left: 10%; top: 68%; }
+        .chart-line b:nth-child(6) { left: 31%; top: 59%; animation-delay: 0.5s; }
+        .chart-line b:nth-child(7) { left: 50%; top: 49%; animation-delay: 1s; }
+        .chart-line b:nth-child(8) { left: 67%; top: 35%; animation-delay: 1.5s; }
+        .chart-line b:nth-child(9) { left: 87%; top: 42%; animation-delay: 2s; }
+
+        .table-rows {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .table-row {
+            display: grid;
+            grid-template-columns: 1.3fr 1fr .8fr;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(126, 174, 191, 0.08);
+        }
+
+        .table-row span {
+            position: relative;
+            z-index: 1;
+            display: block;
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(153, 202, 215, 0.18);
+        }
+
+        .table-row span:nth-child(1) { width: 92%; }
+        .table-row span:nth-child(2) { width: 74%; }
+        .table-row span:nth-child(3) { width: 58%; background: rgba(90, 209, 198, 0.3); }
+
+        .flow-graph .line {
+            position: absolute;
+            display: block;
+            height: 2px;
+            border-radius: 999px;
+            background: rgba(104, 234, 225, 0.56);
+            box-shadow: 0 0 16px rgba(76, 200, 194, 0.16);
+        }
+
+        .flow-graph .line.l1 {
+            left: 20%;
+            top: 34%;
+            width: 23%;
+            transform: rotate(14deg);
+        }
+
+        .flow-graph .line.l2 {
+            left: 41%;
+            top: 41%;
+            width: 24%;
+            transform: rotate(-8deg);
+        }
+
+        .flow-graph .line.l3 {
+            left: 58%;
+            top: 50%;
+            width: 20%;
+            transform: rotate(28deg);
+        }
+
+        .flow-graph .line.l4 {
+            left: 42%;
+            top: 66%;
+            width: 18%;
+            transform: rotate(0deg);
+        }
+
+        .flow-graph .node {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #e1fffd;
+            box-shadow: 0 0 0 8px rgba(76, 211, 203, 0.12);
+            animation: loginPulse 3.8s ease-in-out infinite;
+        }
+
+        .flow-graph .node.n1 { left: 17%; top: 31%; }
+        .flow-graph .node.n2 { left: 41%; top: 39%; animation-delay: .6s; }
+        .flow-graph .node.n3 { left: 65%; top: 47%; animation-delay: 1.2s; }
+        .flow-graph .node.n4 { left: 79%; top: 62%; animation-delay: 1.8s; }
+        .flow-graph .node.n5 { left: 42%; top: 63%; animation-delay: 2.4s; }
+
+        .flow-graph .node::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 36px;
+            height: 2px;
+            background: linear-gradient(90deg, rgba(104, 234, 225, 0.72), transparent);
+            transform: translate(-10%, -50%);
+            animation: loginTrace 2.8s linear infinite;
+            opacity: 0;
+        }
+
+        .db-stacks {
+            padding-top: 12px;
+        }
+
+        .db-stack {
+            position: relative;
+            z-index: 1;
+            height: 30px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(93, 160, 185, 0.24);
+            border-radius: 999px / 18px;
+            background: linear-gradient(180deg, rgba(14, 58, 76, 0.56), rgba(7, 24, 35, 0.18));
+            overflow: hidden;
+        }
+
+        .db-stack::before {
+            content: "";
+            position: absolute;
+            inset: 6px 12px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(65, 217, 208, 0.24), rgba(58, 116, 196, 0.08));
+        }
+
+        .db-stack::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-top: 1px solid rgba(175, 236, 241, 0.34);
+            border-radius: inherit;
+        }
+
+        @keyframes loginShimmer {
+            0% { transform: translateX(-130%); }
+            45%, 100% { transform: translateX(160%); }
+        }
+
+        @keyframes loginFloatA {
+            0%, 100% { transform: translate3d(0, 0, 0); }
+            50% { transform: translate3d(0, -12px, 0); }
+        }
+
+        @keyframes loginFloatB {
+            0%, 100% { transform: translate3d(0, 0, 0); }
+            50% { transform: translate3d(0, 10px, 0); }
+        }
+
+        @keyframes loginFloatC {
+            0%, 100% { transform: translate3d(0, 0, 0); }
+            50% { transform: translate3d(10px, -8px, 0); }
+        }
+
+        @keyframes loginBars {
+            0%, 100% { transform: scaleY(0.84); opacity: 0.7; }
+            50% { transform: scaleY(1.08); opacity: 1; }
+        }
+
+        @keyframes loginPulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 8px rgba(76, 211, 203, 0.12); }
+            50% { transform: scale(1.18); box-shadow: 0 0 0 12px rgba(76, 211, 203, 0.04); }
+        }
+
+        @keyframes loginTrace {
+            0% { opacity: 0; transform: translate(-10%, -50%) scaleX(0.2); }
+            20% { opacity: 1; }
+            100% { opacity: 0; transform: translate(60%, -50%) scaleX(1); }
+        }
+
+        .login-layout {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 56px 72px;
+        }
+
+        .login-shell {
+            position: relative;
+            width: min(720px, 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .login-platform-title {
+            color: rgba(225, 239, 246, 0.9);
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+
+        .login-card {
+            width: 100%;
+            border: 1px solid rgba(148, 179, 194, 0.18);
+            border-radius: 8px;
+            background: rgba(7, 18, 27, 0.78);
+            box-shadow: 0 28px 72px rgba(0, 0, 0, 0.34);
+            backdrop-filter: blur(18px);
+            color: #f3f8fb;
+            overflow: hidden;
+        }
+
+        .login-card .modal-header,
+        .login-card .modal-footer {
+            border-color: rgba(148, 179, 194, 0.14);
+            background: transparent;
+        }
+
+        .login-card .modal-body {
+            padding-top: 14px;
+        }
+
+        .login-card .modal-header h3 {
+            color: #f8fbfd;
+        }
+
+        .login-card label {
+            color: rgba(216, 229, 236, 0.9);
+        }
+
+        .login-card .input {
+            border-color: rgba(125, 154, 169, 0.36);
+            background: rgba(10, 22, 32, 0.78);
+            color: #f6fbff;
+        }
+
+        .login-card .input::placeholder {
+            color: rgba(180, 198, 208, 0.48);
+        }
+
+        .login-card .btn.btn-primary {
+            min-width: 120px;
+        }
+
         .toast {
             position: fixed;
             right: 22px;
@@ -899,8 +1441,28 @@
                 min-width: 0;
             }
 
+            body.auth-locked {
+                min-width: 0;
+            }
+
             .app {
                 grid-template-columns: 1fr;
+            }
+
+            .login-layout {
+                padding: 28px 22px;
+            }
+
+            .login-shell {
+                width: min(560px, 100%);
+            }
+
+            .panel-metrics,
+            .panel-trend,
+            .panel-table,
+            .panel-flow,
+            .panel-db {
+                transform: scale(0.86);
             }
 
             .sidebar {
@@ -943,6 +1505,40 @@
 
             .metric-summary {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            .login-layout {
+                padding: 20px;
+            }
+
+            .login-shell {
+                gap: 12px;
+            }
+
+            .login-platform-title {
+                font-size: 13px;
+            }
+
+            .panel-table,
+            .panel-db {
+                display: none;
+            }
+
+            .panel-metrics {
+                top: 8%;
+                left: -14%;
+            }
+
+            .panel-trend {
+                top: 10%;
+                right: -20%;
+            }
+
+            .panel-flow {
+                right: -18%;
+                bottom: 8%;
             }
         }
 
@@ -1185,8 +1781,8 @@
         .btn.tiny { padding: 4px 10px; font-size: 12px; }
     </style>
 </head>
-<body>
-    <div class="app">
+<body class="auth-locked">
+    <div class="app hidden" id="appShell">
         <aside class="sidebar">
             <div class="brand">
                 <span class="brand-mark" aria-hidden="true">
@@ -1272,6 +1868,15 @@
                         <span class="nav-desc">性能分析</span>
                     </span>
                 </button>
+                <button class="nav-item" data-page="users" data-admin-only hidden>
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><path d="M20 8v6"></path><path d="M23 11h-6"></path></svg>
+                    </span>
+                    <span class="nav-text">
+                        <span class="nav-label">用户权限</span>
+                        <span class="nav-desc">登录与授权</span>
+                    </span>
+                </button>
             </nav>
         </aside>
 
@@ -1282,13 +1887,20 @@
                     <div class="topbar-meta" id="lastRefresh">等待加载</div>
                 </div>
                 <div class="topbar-actions">
+                    <div class="topbar-user">
+                        <span class="user-chip" id="currentUserName">未登录</span>
+                    </div>
                     <button class="btn" onclick="refreshAll()" title="刷新">
                         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v6h-6"></path></svg>
                         刷新
                     </button>
-                    <button class="btn btn-primary" onclick="openInstanceModal()" title="新增实例">
+                    <button class="btn btn-primary" data-admin-only hidden onclick="openInstanceModal()" title="新增实例">
                         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
                         新增实例
+                    </button>
+                    <button class="btn" onclick="logout()" title="退出登录">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 21-5-5 5-5"></path><path d="M4 16h9a4 4 0 0 0 0-8H4"></path><path d="M20 3v18"></path></svg>
+                        退出
                     </button>
                 </div>
             </header>
@@ -1413,15 +2025,15 @@
                             </select>
                         </div>
                         <div class="toolbar-right">
-                            <button class="btn" onclick="openDiscoveryModal('postgres')">
+                            <button class="btn" data-admin-only hidden onclick="openDiscoveryModal('postgres')">
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21h-8"></path><path d="M3 7a4 4 0 0 1 4-4h10v4"></path><path d="M7 21a4 4 0 0 1-4-4V7"></path><path d="M7 13h14"></path><path d="M17 9l4 4-4 4"></path></svg>
                                 导入 PostgreSQL
                             </button>
-                            <button class="btn" onclick="batchCheck()">
+                            <button class="btn" data-admin-only hidden onclick="batchCheck()">
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"></path></svg>
                                 批量检测
                             </button>
-                            <button class="btn btn-primary" onclick="openInstanceModal()">
+                            <button class="btn btn-primary" data-admin-only hidden onclick="openInstanceModal()">
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
                                 新增实例
                             </button>
@@ -1477,11 +2089,11 @@
                                 <option value="manual">手动</option>
                                 <option value="expdp">导出</option>
                             </select>
-                            <button class="btn" onclick="syncTencentBackups()">
+                            <button class="btn" data-admin-only hidden onclick="syncTencentBackups()">
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9"></path><path d="M3 12a9 9 0 0 1 9-9"></path><path d="m3 12 3-3"></path><path d="m3 12 3 3"></path><path d="m21 12-3-3"></path><path d="m21 12-3 3"></path></svg>
                                 同步腾讯云备份
                             </button>
-                            <button class="btn btn-primary" onclick="createBackup()">
+                            <button class="btn btn-primary" data-admin-only hidden onclick="createBackup()">
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path></svg>
                                 新建备份
                             </button>
@@ -1767,15 +2379,15 @@
                                 <div class="panel-subtitle">腾讯云通过 OpenAPI 同步；自建 MySQL/PostgreSQL 通过只读统计视图采集</div>
                             </div>
                             <div style="display:flex; gap:8px;">
-                                <button class="btn" onclick="openCredentialModal()">
+                                <button class="btn" data-admin-only hidden onclick="openCredentialModal()">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.6 7.6a5 5 0 1 1-7 7l-2.4-2.4a5 5 0 0 1 7-7L19 8"></path></svg>
                                     凭证管理
                                 </button>
-                                <button class="btn" onclick="openDiscoveryModal()">
+                                <button class="btn" data-admin-only hidden onclick="openDiscoveryModal()">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21h-8"></path><path d="M3 7a4 4 0 0 1 4-4h10v4"></path><path d="M7 21a4 4 0 0 1-4-4V7"></path><path d="M7 13h14"></path><path d="M17 9l4 4-4 4"></path></svg>
                                     自动导入实例
                                 </button>
-                                <button class="btn btn-primary" onclick="openBindingModal()">
+                                <button class="btn btn-primary" data-admin-only hidden onclick="openBindingModal()">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"></path></svg>
                                     绑定 TC 实例
                                 </button>
@@ -1787,7 +2399,7 @@
                             <span class="muted">启用 TC 绑定：<span id="slowBindingsCount">-</span></span>
                             <span class="muted">失败 TC 绑定：<span id="slowFailingCount">-</span></span>
                             <span style="margin-left:auto;">
-                                <button class="btn tiny" onclick="triggerSlowRefresh()">立即同步/采集</button>
+                                <button class="btn tiny" data-admin-only hidden onclick="triggerSlowRefresh()">立即同步/采集</button>
                             </span>
                         </div>
                         <div id="slowBindingsList"></div>
@@ -1946,9 +2558,133 @@
                         </div>
                     </div>
                 </section>
+
+                <section class="page" id="page-users">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <div class="panel-subtitle" id="userCount">-</div>
+                        </div>
+                        <div class="toolbar-right">
+                            <button class="btn btn-primary" onclick="openUserModal()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><path d="M20 8v6"></path><path d="M23 11h-6"></path></svg>
+                                新增用户
+                            </button>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">账号与权限</div>
+                                <div class="panel-subtitle">DBA 拥有全部管理权限，研发仅可查询和查看数据</div>
+                            </div>
+                        </div>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>用户名</th>
+                                        <th>显示名</th>
+                                        <th>角色</th>
+                                        <th>状态</th>
+                                        <th>创建时间</th>
+                                        <th>更新时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
             </main>
         </section>
     </div>
+
+    <section class="login-screen" id="loginModal">
+        <div class="login-stage" aria-hidden="true">
+            <div class="bg-panel panel-metrics">
+                <div class="panel-header-line"></div>
+                <div class="metric-cards">
+                    <div class="metric-card"><strong></strong><span></span><i></i></div>
+                    <div class="metric-card"><strong></strong><span></span><i></i></div>
+                    <div class="metric-card"><strong></strong><span></span><i></i></div>
+                    <div class="metric-card"><strong></strong><span></span><i></i></div>
+                </div>
+            </div>
+            <div class="bg-panel panel-trend">
+                <div class="panel-header-line"></div>
+                <div class="trend-chart">
+                    <div class="chart-bars">
+                        <span></span><span></span><span></span><span></span><span></span><span></span>
+                    </div>
+                    <div class="chart-line">
+                        <i></i><i></i><i></i><i></i>
+                        <b></b><b></b><b></b><b></b><b></b>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-panel panel-table">
+                <div class="panel-header-line"></div>
+                <div class="table-rows">
+                    <div class="table-row"><span></span><span></span><span></span></div>
+                    <div class="table-row"><span></span><span></span><span></span></div>
+                    <div class="table-row"><span></span><span></span><span></span></div>
+                    <div class="table-row"><span></span><span></span><span></span></div>
+                    <div class="table-row"><span></span><span></span><span></span></div>
+                </div>
+            </div>
+            <div class="bg-panel panel-flow">
+                <div class="panel-header-line"></div>
+                <div class="flow-graph">
+                    <span class="line l1"></span>
+                    <span class="line l2"></span>
+                    <span class="line l3"></span>
+                    <span class="line l4"></span>
+                    <span class="node n1"></span>
+                    <span class="node n2"></span>
+                    <span class="node n3"></span>
+                    <span class="node n4"></span>
+                    <span class="node n5"></span>
+                </div>
+            </div>
+            <div class="bg-panel panel-db">
+                <div class="panel-header-line"></div>
+                <div class="db-stacks">
+                    <div class="db-stack"></div>
+                    <div class="db-stack"></div>
+                    <div class="db-stack"></div>
+                    <div class="db-stack"></div>
+                </div>
+            </div>
+        </div>
+        <div class="login-layout">
+            <div class="login-shell">
+                <div class="login-platform-title">数据库运维平台</div>
+                <form class="modal login-card" id="loginForm" style="width: min(420px, calc(100vw - 48px));">
+                    <div class="modal-header">
+                        <h3>登录 DBCheck</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p class="login-helper">请输入用户名和密码。首次部署默认管理员账号由后端自动初始化，登录后建议立即修改密码。</p>
+                        <div class="form-grid">
+                            <div class="form-field full">
+                                <label for="loginUsername">用户名</label>
+                                <input class="input" id="loginUsername" required autocomplete="username" placeholder="请输入用户名">
+                            </div>
+                            <div class="form-field full">
+                                <label for="loginPassword">密码</label>
+                                <input class="input" id="loginPassword" type="password" required autocomplete="current-password" placeholder="请输入密码">
+                            </div>
+                        </div>
+                        <div class="login-error" id="loginError"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="submit" class="btn btn-primary">登录</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </section>
 
     <div class="modal-mask" id="instanceModal">
         <form class="modal" id="instanceForm">
@@ -2192,6 +2928,50 @@
         </div>
     </div>
 
+    <div class="modal-mask" id="userModal">
+        <form class="modal" id="userForm" style="width: min(640px, calc(100vw - 48px));">
+            <div class="modal-header">
+                <h3 id="userModalTitle">新增用户</h3>
+                <button type="button" class="btn icon-btn" onclick="closeUserModal()" title="关闭">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="userFormId">
+                <div class="form-grid">
+                    <div class="form-field">
+                        <label for="userFormUsername">用户名</label>
+                        <input class="input" id="userFormUsername" required autocomplete="username">
+                    </div>
+                    <div class="form-field">
+                        <label for="userFormDisplayName">显示名</label>
+                        <input class="input" id="userFormDisplayName" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="userFormRole">角色</label>
+                        <select class="select" id="userFormRole">
+                            <option value="dba">DBA</option>
+                            <option value="rd">研发</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="userFormEnabled" style="display:flex; align-items:center; gap:8px; padding-top:18px;">
+                            <input type="checkbox" id="userFormEnabled" checked> 启用账号
+                        </label>
+                    </div>
+                    <div class="form-field full">
+                        <label for="userFormPassword">密码</label>
+                        <input class="input" id="userFormPassword" type="password" placeholder="编辑时留空则不修改">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="closeUserModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+
     <script>
         const API_BASE = (() => {
             if (window.DBCHECK_API_BASE) return window.DBCHECK_API_BASE.replace(/\/$/, '');
@@ -2201,6 +2981,7 @@
             }
             return '';
         })();
+        const AUTH_STORAGE_KEY = 'dbcheck.auth';
         const BACKUP_AUTO_SYNC_MS = 60000;
         const BACKUP_CREATE_POLL_MS = 30000;
         const BACKUP_CREATE_POLL_MAX = 20;
@@ -2217,6 +2998,7 @@
         ];
         const state = {
             page: 'overview',
+            auth: { token: null, user: null },
             dashboard: null,
             instances: [],
             backups: [],
@@ -2234,6 +3016,7 @@
             monitorMetricData: null,
             monitorChart: null,
             logs: [],
+            users: [],
             selectedInstanceId: null,
             result: null,
             // ===== 慢 SQL 模块状态 =====
@@ -2279,16 +3062,140 @@
             </button>`;
         }
 
+        function currentUser() {
+            return state.auth.user;
+        }
+
+        function hasUser() {
+            return !!(state.auth.token && state.auth.user);
+        }
+
+        function isDba() {
+            return currentUser()?.role === 'dba';
+        }
+
+        function roleLabel(role) {
+            return role === 'dba' ? 'DBA' : role === 'rd' ? '研发' : (role || '-');
+        }
+
+        function restoreAuth() {
+            try {
+                const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                if (parsed?.token && parsed?.user) {
+                    state.auth = { token: parsed.token, user: parsed.user };
+                }
+            } catch (error) {
+                console.warn('restore auth failed', error);
+            }
+        }
+
+        function persistAuth() {
+            try {
+                if (state.auth.token && state.auth.user) {
+                    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state.auth));
+                } else {
+                    localStorage.removeItem(AUTH_STORAGE_KEY);
+                }
+            } catch (error) {
+                console.warn('persist auth failed', error);
+            }
+        }
+
+        function setAuth(token, user) {
+            state.auth = { token, user };
+            persistAuth();
+            applyRoleAccess();
+        }
+
+        function clearAuth() {
+            state.auth = { token: null, user: null };
+            state.users = [];
+            persistAuth();
+            applyRoleAccess();
+        }
+
+        function authHeaders(extra = {}) {
+            const headers = { ...extra };
+            if (state.auth.token) {
+                headers.Authorization = `Bearer ${state.auth.token}`;
+            }
+            return headers;
+        }
+
+        function applyRoleAccess() {
+            const user = currentUser();
+            document.getElementById('currentUserName').textContent = user
+                ? `${user.display_name} · ${roleLabel(user.role)}`
+                : '未登录';
+            document.querySelectorAll('[data-admin-only]').forEach(node => {
+                node.hidden = !isDba();
+            });
+            if (!isDba() && state.page === 'users') {
+                state.page = 'overview';
+            }
+        }
+
+        function showLoginScreen(message = '') {
+            document.getElementById('loginError').textContent = message || '';
+            document.body.classList.add('auth-locked');
+            document.getElementById('appShell').classList.add('hidden');
+            document.getElementById('loginModal').classList.add('show');
+            setTimeout(() => document.getElementById('loginUsername').focus(), 20);
+        }
+
+        function hideLoginScreen() {
+            document.getElementById('loginError').textContent = '';
+            document.getElementById('loginPassword').value = '';
+            document.body.classList.remove('auth-locked');
+            document.getElementById('appShell').classList.remove('hidden');
+            document.getElementById('loginModal').classList.remove('show');
+        }
+
+        function ensureDbaAction(message = '当前账号只有查询权限') {
+            if (isDba()) return true;
+            toast(message, 'warning');
+            return false;
+        }
+
         async function api(path, options = {}) {
+            const headers = authHeaders({ ...(options.headers || {}) });
+            if (!('Content-Type' in headers) && !(options.body instanceof FormData)) {
+                headers['Content-Type'] = 'application/json';
+            }
             const response = await fetch(`${API_BASE}${path}`, {
-                headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+                headers,
                 ...options
             });
-            const data = await response.json();
+            const text = await response.text();
+            let data = {};
+            if (text) {
+                try {
+                    data = JSON.parse(text);
+                } catch (_error) {
+                    data = { message: text };
+                }
+            }
+            if (response.status === 401) {
+                clearAuth();
+                showLoginScreen(data.detail || data.message || '登录已失效，请重新登录');
+                throw new Error(data.detail || data.message || '登录已失效，请重新登录');
+            }
             if (!response.ok || (data.code && data.code >= 400)) {
-                throw new Error(data.detail || data.message || '请求失败');
+                throw new Error(formatApiError(data) || '请求失败');
             }
             return data;
+        }
+
+        function formatApiError(data) {
+            if (Array.isArray(data?.detail)) {
+                return data.detail.map(item => {
+                    const field = Array.isArray(item.loc) ? item.loc.filter(part => part !== 'body').join('.') : '';
+                    return field ? `${field}: ${item.msg}` : item.msg;
+                }).join('；');
+            }
+            return data?.detail || data?.message || '';
         }
 
         function escapeHtml(value) {
@@ -2377,6 +3284,51 @@
             target.textContent = `本月 GetMonitorData 查询 ${usage.count} 次，本地计数，仅作费用提醒`;
         }
 
+        async function loadAuthMe() {
+            const data = await api('/api/auth/me');
+            setAuth(state.auth.token, data.data.user);
+            return data.data.user;
+        }
+
+        async function loadUsers() {
+            if (!isDba()) {
+                state.users = [];
+                renderUsers();
+                return;
+            }
+            const data = await api('/api/users');
+            state.users = data.data.items || [];
+            renderUsers();
+        }
+
+        function renderUsers() {
+            const tbody = document.getElementById('usersTable');
+            if (!tbody) return;
+            document.getElementById('userCount').textContent = isDba()
+                ? `共 ${state.users.length} 个用户`
+                : '当前账号无管理权限';
+            if (!isDba()) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">当前账号无管理权限</td></tr>';
+                return;
+            }
+            tbody.innerHTML = state.users.length ? state.users.map(user => `
+                <tr>
+                    <td>${escapeHtml(user.username)}</td>
+                    <td>${escapeHtml(user.display_name)}</td>
+                    <td>${badge(user.role === 'dba' ? 'online' : 'type', roleLabel(user.role))}</td>
+                    <td>${user.enabled ? badge('success', '启用') : badge('offline', '停用')}</td>
+                    <td>${escapeHtml(user.created_at || '-')}</td>
+                    <td>${escapeHtml(user.updated_at || '-')}</td>
+                    <td>
+                        <div class="actions">
+                            ${iconButton('编辑', '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>', `editUser(${user.id})`)}
+                            ${currentUser()?.id === user.id ? '' : iconButton('删除', '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path>', `deleteUserAccount(${user.id})`, 'btn-danger')}
+                        </div>
+                    </td>
+                </tr>
+            `).join('') : '<tr><td colspan="7" class="empty">暂无用户</td></tr>';
+        }
+
         function buildInstanceCheckPath(id, password = '') {
             const params = new URLSearchParams();
             if (password) params.set('password', password);
@@ -2396,8 +3348,10 @@
         }
 
         async function refreshAll() {
+            if (!hasUser()) return;
             try {
                 const loaders = [loadDashboard(), loadInstances(), loadBackups(), loadLogs()];
+                if (isDba() && state.page === 'users') loaders.push(loadUsers());
                 if (state.page === 'binlog') loaders.push(loadBinlogBindings());
                 await Promise.all(loaders);
                 updateRefreshText();
@@ -2843,9 +3797,11 @@
                     <td>${escapeHtml(inst.last_check || '-')}</td>
                     <td>
                         <div class="actions">
+                            ${isDba() ? `
                             ${iconButton('检测', '<path d="M20 6 9 17l-5-5"></path>', `checkInstance(${inst.id})`)}
                             ${iconButton('编辑', '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>', `editInstance(${inst.id})`)}
                             ${iconButton('删除', '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path>', `deleteInstance(${inst.id})`, 'btn-danger')}
+                            ` : '<span class="muted">只读</span>'}
                         </div>
                     </td>
                 </tr>
@@ -2875,7 +3831,9 @@
                         <td>${escapeHtml(item.end_time || '-')}</td>
                         <td>${badge(item.status, labelOf(item.status))}</td>
                         <td>${escapeHtml(item.operator || '-')}</td>
-                        <td>${iconButton('删除', '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path>', `deleteBackup(${item.id})`, 'btn-danger')}</td>
+                        <td>${isDba()
+                            ? iconButton('删除', '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path>', `deleteBackup(${item.id})`, 'btn-danger')
+                            : '<span class="muted">只读</span>'}</td>
                     </tr>
                 `;
             }).join('') : '<tr><td colspan="9" class="empty">没有匹配的备份记录</td></tr>';
@@ -2995,18 +3953,21 @@
         }
 
         function renderCurrentPage() {
+            applyRoleAccess();
             renderDashboard();
             renderInstances();
             renderBackups();
             renderBinlogPage();
             renderMonitorPage();
             renderLogs();
+            renderUsers();
             renderQueryInstances();
             renderBackupInstanceOptions();
             renderSlowPage();
         }
 
         async function checkInstance(id) {
+            if (!ensureDbaAction()) return;
             try {
                 toast('正在检测实例...', 'info');
                 const data = await api(buildInstanceCheckPath(id), { method: 'POST' });
@@ -3018,6 +3979,7 @@
         }
 
         async function batchCheck() {
+            if (!ensureDbaAction()) return;
             if (!confirm('确定批量检测所有实例吗？')) return;
             try {
                 const data = await api('/api/instances/batch-check', { method: 'POST' });
@@ -3030,6 +3992,7 @@
         }
 
         function openInstanceModal(instance = null) {
+            if (!ensureDbaAction()) return;
             document.getElementById('instanceModalTitle').textContent = instance ? '编辑实例' : '新增实例';
             document.getElementById('formId').value = instance?.id || '';
             document.getElementById('formName').value = instance?.name || '';
@@ -3060,6 +4023,7 @@
         }
 
         async function deleteInstance(id) {
+            if (!ensureDbaAction()) return;
             if (!confirm('确定删除这个实例吗？相关备份、腾讯云绑定和慢 SQL 记录也会删除。')) return;
             try {
                 await api(`/api/instances/${id}`, { method: 'DELETE' });
@@ -3071,6 +4035,7 @@
         }
 
         async function deleteBackup(id) {
+            if (!ensureDbaAction()) return;
             if (!confirm('确定删除这条备份记录吗？')) return;
             try {
                 await api(`/api/backups/${id}`, { method: 'DELETE' });
@@ -3089,6 +4054,7 @@
         }
 
         async function createBackup() {
+            if (!ensureDbaAction()) return;
             const instanceId = document.getElementById('backupInstance').value;
             if (!instanceId) {
                 toast('请先选择实例', 'warning');
@@ -3127,6 +4093,7 @@
         }
 
         async function syncTencentBackups(options = {}) {
+            if (!ensureDbaAction()) return null;
             const { silent = false, instanceId = null } = options || {};
             if (state.backupSyncing) {
                 if (!silent) toast('备份同步正在进行中', 'info');
@@ -3226,7 +4193,9 @@
                         binding_id: String(item.binding_id),
                         binlog_id: String(item.binlog_id),
                     });
-                    const response = await fetch(`${API_BASE}/api/binlogs/download?${params.toString()}`);
+                    const response = await fetch(`${API_BASE}/api/binlogs/download?${params.toString()}`, {
+                        headers: authHeaders(),
+                    });
                     if (!response.ok) {
                         const text = await response.text();
                         let message = '下载失败';
@@ -3384,6 +4353,10 @@
         }
 
         function switchPage(page) {
+            if (page === 'users' && !isDba()) {
+                toast('当前账号无管理权限', 'warning');
+                return;
+            }
             state.page = page;
             document.querySelectorAll('.nav-item').forEach(item => {
                 item.classList.toggle('active', item.dataset.page === page);
@@ -3399,6 +4372,9 @@
             renderCurrentPage();
             if (page === 'binlog') {
                 loadBinlogBindings().catch(error => toast(error.message, 'error'));
+            }
+            if (page === 'users' && isDba()) {
+                loadUsers().catch(error => toast(error.message, 'error'));
             }
             if (page === 'monitor') {
                 if (!state.monitorBindings.length) {
@@ -3476,6 +4452,7 @@
 
         document.getElementById('instanceForm').addEventListener('submit', async event => {
             event.preventDefault();
+            if (!ensureDbaAction()) return;
             const form = event.currentTarget;
             const submitButton = form.querySelector('button[type="submit"]');
             const originalSubmitText = submitButton.textContent;
@@ -3608,9 +4585,11 @@
                         </div>
                     </div>
                     <div class="actions">
+                        ${isDba() ? `
                         <button class="btn tiny" onclick="testTCCredential(${c.id})">测试</button>
                         <button class="btn tiny" onclick="editTCCredential(${c.id})">编辑</button>
                         <button class="btn tiny danger" onclick="deleteTCCredential(${c.id})">删除</button>
+                        ` : '<span class="muted">只读</span>'}
                     </div>
                 </div>
             `).join('');
@@ -3626,6 +4605,7 @@
         }
 
         function openCredentialModal(cred = null) {
+            if (!ensureDbaAction()) return;
             document.getElementById('credFormId').value = cred ? cred.id : '';
             document.getElementById('credFormName').value = cred ? cred.name : '';
             document.getElementById('credFormSecretId').value = cred ? cred.secret_id : '';
@@ -3647,6 +4627,7 @@
 
         document.getElementById('credentialForm').addEventListener('submit', async e => {
             e.preventDefault();
+            if (!ensureDbaAction()) return;
             const id = document.getElementById('credFormId').value;
             const payload = {
                 name: document.getElementById('credFormName').value.trim(),
@@ -3671,6 +4652,7 @@
         });
 
         async function testTCCredential(id) {
+            if (!ensureDbaAction()) return;
             try {
                 toast('正在测试凭证…', 'info');
                 const data = await api(`/api/tc/credentials/${id}/test`, { method: 'POST' });
@@ -3686,6 +4668,7 @@
         }
 
         async function deleteTCCredential(id) {
+            if (!ensureDbaAction()) return;
             if (!confirm('确定删除该凭证？相关绑定需先解绑。')) return;
             try {
                 await api(`/api/tc/credentials/${id}`, { method: 'DELETE' });
@@ -3747,8 +4730,10 @@
                         </div>
                     </div>
                     <div class="actions">
+                        ${isDba() ? `
                         <button class="btn tiny" onclick="editBinding(${b.id})">编辑</button>
                         <button class="btn tiny danger" onclick="deleteBinding(${b.id})">删除</button>
+                        ` : '<span class="muted">只读</span>'}
 	                    </div>
 	                </div>`;
             }).join('');
@@ -3798,7 +4783,7 @@
                 </div>
                 <div class="binding-summary-actions">
                     <span class="muted">完整绑定列表已收起，避免占用慢查询列表空间。</span>
-                    <button class="btn tiny" onclick="openBindingModal()">查看 / 管理绑定</button>
+                    <button class="btn tiny" onclick="${isDba() ? 'openBindingModal()' : 'void(0)'}">${isDba() ? '查看 / 管理绑定' : '查看绑定'}</button>
                 </div>
             `;
         }
@@ -3822,6 +4807,7 @@
         }
 
         function openBindingModal(b = null) {
+            if (!ensureDbaAction()) return;
             if (!state.slowCredentials.length) {
                 toast('请先录入腾讯云凭证', 'warning');
                 openCredentialModal();
@@ -3854,6 +4840,7 @@
 
         document.getElementById('bindingForm').addEventListener('submit', async e => {
             e.preventDefault();
+            if (!ensureDbaAction()) return;
             const id = document.getElementById('bindFormId').value;
             const payload = {
                 instance_id: Number(document.getElementById('bindFormInstance').value),
@@ -3886,6 +4873,7 @@
         }
 
         async function deleteBinding(id) {
+            if (!ensureDbaAction()) return;
             if (!confirm('确定删除该绑定？历史慢 SQL 记录会一并删除。')) return;
             try {
                 await api(`/api/bindings/${id}`, { method: 'DELETE' });
@@ -3910,6 +4898,7 @@
         }
 
         async function openDiscoveryModal(product = null) {
+            if (!ensureDbaAction()) return;
             try {
                 await loadTCCredentials();
                 if (!state.slowCredentials.length) {
@@ -3966,6 +4955,7 @@
         }
 
         async function discoverTCInstances() {
+            if (!ensureDbaAction()) return;
             try {
                 const payload = buildDiscoveryPayload();
                 document.getElementById('discoveryResult').innerHTML = '<p class="muted">正在扫描腾讯云实例...</p>';
@@ -3983,6 +4973,7 @@
         }
 
         async function importTCInstances() {
+            if (!ensureDbaAction()) return;
             try {
                 const payload = buildDiscoveryPayload();
                 document.getElementById('discoveryResult').innerHTML = '<p class="muted">正在导入并创建绑定...</p>';
@@ -4077,6 +5068,7 @@
         }
 
         async function triggerSlowRefresh() {
+            if (!ensureDbaAction()) return;
             try {
                 const selectedInstance = document.getElementById('slowFilterInstance')?.value;
                 const suffix = selectedInstance ? `?instance_id=${encodeURIComponent(selectedInstance)}` : '';
@@ -4406,7 +5398,151 @@
             return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
         }
 
-        refreshAll();
+        function openUserModal(user = null) {
+            if (!ensureDbaAction()) return;
+            document.getElementById('userModalTitle').textContent = user ? '编辑用户' : '新增用户';
+            document.getElementById('userFormId').value = user?.id || '';
+            document.getElementById('userFormUsername').value = user?.username || '';
+            document.getElementById('userFormUsername').disabled = !!user;
+            document.getElementById('userFormDisplayName').value = user?.display_name || '';
+            document.getElementById('userFormRole').value = user?.role || 'rd';
+            document.getElementById('userFormEnabled').checked = user ? !!user.enabled : true;
+            document.getElementById('userFormPassword').value = '';
+            document.getElementById('userModal').classList.add('show');
+        }
+
+        function closeUserModal() {
+            document.getElementById('userModal').classList.remove('show');
+        }
+
+        function editUser(id) {
+            const user = state.users.find(item => item.id === id);
+            if (user) openUserModal(user);
+        }
+
+        async function deleteUserAccount(id) {
+            if (!ensureDbaAction()) return;
+            if (!confirm('确定删除该用户吗？')) return;
+            try {
+                await api(`/api/users/${id}`, { method: 'DELETE' });
+                toast('用户已删除', 'success');
+                await loadUsers();
+            } catch (error) {
+                toast(`删除失败：${error.message}`, 'error');
+            }
+        }
+
+        async function logout() {
+            if (state.auth.token) {
+                try {
+                    await api('/api/auth/logout', { method: 'POST' });
+                } catch (error) {
+                    console.warn('logout failed', error);
+                }
+            }
+            clearAuth();
+            stopBackupAutoSync();
+            renderCurrentPage();
+            showLoginScreen('已退出登录');
+        }
+
+        async function bootstrapApp() {
+            restoreAuth();
+            applyRoleAccess();
+            renderCurrentPage();
+            if (!state.auth.token) {
+                showLoginScreen();
+                return;
+            }
+            try {
+                await loadAuthMe();
+                hideLoginScreen();
+                await refreshAll();
+            } catch (error) {
+                console.warn('bootstrap auth failed', error);
+            }
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            const submit = event.currentTarget.querySelector('button[type="submit"]');
+            submit.disabled = true;
+            document.getElementById('loginError').textContent = '';
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password }),
+                });
+                const text = await response.text();
+                const data = text ? JSON.parse(text) : {};
+                if (!response.ok) {
+                    throw new Error(data.detail || data.message || '登录失败');
+                }
+                setAuth(data.data.token, data.data.user);
+                hideLoginScreen();
+                await refreshAll();
+                if (isDba()) {
+                    await loadUsers();
+                }
+            } catch (error) {
+                document.getElementById('loginError').textContent = error.message;
+            } finally {
+                submit.disabled = false;
+            }
+        });
+
+        document.getElementById('userModal').addEventListener('click', event => {
+            if (event.target.id === 'userModal') closeUserModal();
+        });
+
+        document.getElementById('userForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!ensureDbaAction()) return;
+            const id = document.getElementById('userFormId').value;
+            const payload = {
+                display_name: document.getElementById('userFormDisplayName').value.trim(),
+                role: document.getElementById('userFormRole').value,
+                enabled: document.getElementById('userFormEnabled').checked,
+            };
+            if (!id) {
+                payload.username = document.getElementById('userFormUsername').value.trim();
+            }
+            const password = document.getElementById('userFormPassword').value;
+            if (password) payload.password = password;
+            if (!id && !payload.username) {
+                toast('请填写用户名', 'warning');
+                return;
+            }
+            if (!id && !payload.password) {
+                toast('请填写初始密码', 'warning');
+                return;
+            }
+            try {
+                await api(id ? `/api/users/${id}` : '/api/users', {
+                    method: id ? 'PUT' : 'POST',
+                    body: JSON.stringify(id ? payload : {
+                        username: payload.username,
+                        display_name: payload.display_name,
+                        role: payload.role,
+                        enabled: payload.enabled,
+                        password: payload.password,
+                    }),
+                });
+                toast(id ? '用户已更新' : '用户已创建', 'success');
+                closeUserModal();
+                await loadUsers();
+                if (currentUser() && id && Number(id) === Number(currentUser().id)) {
+                    await loadAuthMe();
+                }
+            } catch (error) {
+                toast(`保存失败：${error.message}`, 'error');
+            }
+        });
+
+        bootstrapApp();
     </script>
 </body>
 </html>
