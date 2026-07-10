@@ -1018,6 +1018,26 @@ def list_self_hosted_slow_instances(
     return [internal_instance(row) for row in rows]
 
 
+def list_self_hosted_binlog_instances() -> List[Dict[str, Any]]:
+    """返回归档日志页可直接连库查询 binlog 的自建 MySQL 实例。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT i.*
+            FROM instances i
+            WHERE i.db_type = 'MySQL'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM instance_tc_bindings b
+                  WHERE b.instance_id = i.id
+                    AND b.tc_product IN ('cdb', 'cynosdb')
+              )
+            ORDER BY i.id
+            """
+        ).fetchall()
+    return [internal_instance(row) for row in rows]
+
+
 def get_binding(binding_id: int) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         row = conn.execute(

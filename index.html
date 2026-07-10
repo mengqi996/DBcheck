@@ -2397,7 +2397,9 @@
 
         async function refreshAll() {
             try {
-                await Promise.all([loadDashboard(), loadInstances(), loadBackups(), loadLogs()]);
+                const loaders = [loadDashboard(), loadInstances(), loadBackups(), loadLogs()];
+                if (state.page === 'binlog') loaders.push(loadBinlogBindings());
+                await Promise.all(loaders);
                 updateRefreshText();
                 renderCurrentPage();
             } catch (error) {
@@ -2899,7 +2901,7 @@
                     <td>${escapeHtml(item.end_time || '-')}</td>
                     <td>${badge(item.status || 'pending', labelOf(item.status || 'pending'))}</td>
                     <td>
-                        <button class="btn tiny" onclick="downloadBinlog(${index})" ${item.tc_product === 'self_mysql' ? 'disabled title="自建 MySQL 暂不支持生成下载链接"' : ''}>
+                        <button class="btn tiny" onclick="downloadBinlog(${index})" title="下载日志文件">
                             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
                             下载
                         </button>
@@ -3214,17 +3216,43 @@
         async function downloadBinlog(index) {
             const item = state.binlogs[index];
             if (!item) return;
-            if (item.tc_product === 'self_mysql') {
-                toast('自建 MySQL binlog 暂不支持生成浏览器下载链接，请在数据库服务器上使用 mysqlbinlog 或文件系统获取', 'warning');
-                return;
-            }
             try {
+                if (!item.binlog_id) {
+                    toast('当前日志文件缺少下载 ID', 'error');
+                    return;
+                }
+                if (item.tc_product === 'self_mysql') {
+                    const params = new URLSearchParams({
+                        binding_id: String(item.binding_id),
+                        binlog_id: String(item.binlog_id),
+                    });
+                    const response = await fetch(`${API_BASE}/api/binlogs/download?${params.toString()}`);
+                    if (!response.ok) {
+                        const text = await response.text();
+                        let message = '下载失败';
+                        try {
+                            const data = JSON.parse(text);
+                            message = data.detail || data.message || message;
+                        } catch (_error) {
+                            message = text || message;
+                        }
+                        throw new Error(message);
+                    }
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.download = item.file_name || item.binlog_id || 'mysql-binlog';
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                    toast('已发起下载', 'success');
+                    return;
+                }
+
                 let url = item.download_url;
                 if (!url) {
-                    if (!item.binlog_id) {
-                        toast('当前日志文件缺少下载 ID', 'error');
-                        return;
-                    }
                     const params = new URLSearchParams({
                         binding_id: String(item.binding_id),
                         binlog_id: String(item.binlog_id),

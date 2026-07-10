@@ -13,6 +13,10 @@ from tc_client import TCClient
 
 SELF_HOSTED_CONNECT_TIMEOUT = max(1, int(os.getenv("DBCHECK_SELF_HOSTED_CONNECT_TIMEOUT", "5")))
 SELF_HOSTED_MYSQL_PRODUCT = "self_mysql"
+SELF_HOSTED_MYSQL_BINLOG_DOWNLOAD_MAX_BYTES = max(
+    1,
+    int(os.getenv("DBCHECK_SELF_HOSTED_BINLOG_DOWNLOAD_MAX_BYTES", str(256 * 1024 * 1024))),
+)
 
 
 def _default_time_window() -> tuple[str, str]:
@@ -97,6 +101,51 @@ def _show_mysql_binary_logs(conn: Any) -> list[Dict[str, Any]]:
         return list(cur.fetchall())
 
 
+def _mysql_binlog_file_name(row: Dict[str, Any]) -> Optional[str]:
+    return row.get("Log_name") or row.get("log_name") or row.get("File_name") or row.get("file_name")
+
+
+def _mysql_binlog_file_size(row: Dict[str, Any]) -> int:
+    try:
+        return int(row.get("File_size") or row.get("file_size") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _resolve_mysql_binlog_path(variables: Dict[str, Any], file_name: str) -> str:
+    base = str(variables.get("log_bin_basename") or "").strip()
+    index = str(variables.get("log_bin_index") or "").strip()
+    directory = ""
+    if base:
+        directory = os.path.dirname(base)
+    elif index:
+        directory = os.path.dirname(index)
+    if directory:
+        return os.path.join(directory, os.path.basename(file_name))
+    return file_name
+
+
+def _load_mysql_file(conn: Any, file_path: str) -> bytes:
+    with conn.cursor() as cur:
+        cur.execute("SELECT LOAD_FILE(%s) AS content", (file_path,))
+        row = cur.fetchone()
+    content = row.get("content") if isinstance(row, dict) else None
+    if content is None:
+        raise ValueError(
+            "读取 binlog 失败：MySQL LOAD_FILE 返回空。请确认账号具备 FILE 权限，"
+            "secure_file_priv 允许读取 binlog 目录，mysqld 进程有文件权限，且 max_allowed_packet 足够。"
+        )
+    if isinstance(content, bytes):
+        return content
+    if isinstance(content, bytearray):
+        return bytes(content)
+    if isinstance(content, memoryview):
+        return content.tobytes()
+    if isinstance(content, str):
+        return content.encode("latin1")
+    raise ValueError(f"读取 binlog 失败：LOAD_FILE 返回了不支持的数据类型 {type(content).__name__}")
+
+
 def _list_self_hosted_mysql_binlogs(
     binding: Dict[str, Any],
     start_time: Optional[str],
@@ -119,8 +168,8 @@ def _list_self_hosted_mysql_binlogs(
     selected = list(reversed(raw_rows))[:limit]
     rows = []
     for row in selected:
-        file_name = row.get("Log_name") or row.get("Log_name".lower()) or row.get("File_name")
-        file_size = row.get("File_size") or row.get("File_size".lower())
+        file_name = _mysql_binlog_file_name(row)
+        file_size = _mysql_binlog_file_size(row)
         if not file_name:
             continue
         rows.append(
@@ -133,7 +182,7 @@ def _list_self_hosted_mysql_binlogs(
                 "tc_instance_id": binding["tc_instance_id"],
                 "binlog_id": file_name,
                 "file_name": file_name,
-                "size_bytes": int(file_size or 0),
+                "size_bytes": file_size,
                 "size": _format_bytes(file_size),
                 "start_time": None,
                 "end_time": None,
@@ -157,9 +206,64 @@ def _list_self_hosted_mysql_binlogs(
             "variables": variables,
             "notice": "；".join(notices) if notices else None,
             "supports_download_url": False,
+            "supports_direct_download": True,
+            "download_max_bytes": SELF_HOSTED_MYSQL_BINLOG_DOWNLOAD_MAX_BYTES,
         },
         "total": len(rows),
         "items": rows,
+    }
+
+
+def download_self_hosted_mysql_binlog(binding_id: int, binlog_id: str) -> Dict[str, Any]:
+    binding = storage.get_binding(binding_id)
+    if not binding:
+        raise ValueError("绑定不存在")
+    if binding["tc_product"] != SELF_HOSTED_MYSQL_PRODUCT:
+        raise ValueError("该接口仅支持自建 MySQL binlog 下载")
+
+    instance = storage.get_instance(binding["instance_id"], include_secret=True)
+    if not instance:
+        raise ValueError("实例不存在")
+    if instance.get("db_type") != "MySQL":
+        raise ValueError("自建 binlog 下载仅支持 MySQL 实例")
+
+    conn = _mysql_connect(instance)
+    try:
+        variables = _fetch_mysql_binlog_variables(conn)
+        raw_rows = _show_mysql_binary_logs(conn)
+        rows_by_name = {
+            str(name): row
+            for row in raw_rows
+            if (name := _mysql_binlog_file_name(row))
+        }
+        if binlog_id not in rows_by_name:
+            raise ValueError("binlog 文件不存在或已被清理")
+
+        file_name = binlog_id
+        file_size = _mysql_binlog_file_size(rows_by_name[binlog_id])
+        if file_size > SELF_HOSTED_MYSQL_BINLOG_DOWNLOAD_MAX_BYTES:
+            raise ValueError(
+                f"binlog 文件大小 {_format_bytes(file_size)} 超过下载上限 "
+                f"{_format_bytes(SELF_HOSTED_MYSQL_BINLOG_DOWNLOAD_MAX_BYTES)}；"
+                "如需放开，调整 DBCHECK_SELF_HOSTED_BINLOG_DOWNLOAD_MAX_BYTES 后重启后端。"
+            )
+
+        file_path = _resolve_mysql_binlog_path(variables, file_name)
+        content = _load_mysql_file(conn, file_path)
+    finally:
+        conn.close()
+
+    if len(content) > SELF_HOSTED_MYSQL_BINLOG_DOWNLOAD_MAX_BYTES:
+        raise ValueError(
+            f"binlog 文件大小 {_format_bytes(len(content))} 超过下载上限 "
+            f"{_format_bytes(SELF_HOSTED_MYSQL_BINLOG_DOWNLOAD_MAX_BYTES)}"
+        )
+
+    return {
+        "file_name": file_name,
+        "content": content,
+        "size_bytes": len(content),
+        "source_path": file_path,
     }
 
 
@@ -170,9 +274,8 @@ def list_binlog_bindings() -> Dict[str, Any]:
     created lazily so a locally managed MySQL instance can appear in the same UI
     without requiring a slow-query refresh first.
     """
-    for instance in storage.list_self_hosted_slow_instances():
-        if instance.get("db_type") == "MySQL":
-            storage.get_or_create_self_hosted_binding(int(instance["id"]), SELF_HOSTED_MYSQL_PRODUCT)
+    for instance in storage.list_self_hosted_binlog_instances():
+        storage.get_or_create_self_hosted_binding(int(instance["id"]), SELF_HOSTED_MYSQL_PRODUCT)
 
     supported = {"cdb", "cynosdb", "postgres", SELF_HOSTED_MYSQL_PRODUCT}
     all_bindings = storage.list_bindings(include_self_hosted=True)
@@ -273,8 +376,11 @@ def binlog_download_url(binding_id: int, binlog_id: str) -> Dict[str, Any]:
     if not binding:
         raise ValueError("绑定不存在")
 
-    client = _client_for_binding(binding)
     product = binding["tc_product"]
+    if product == SELF_HOSTED_MYSQL_PRODUCT:
+        raise ValueError("自建 MySQL binlog 请使用直接下载接口")
+
+    client = _client_for_binding(binding)
     if product == "cynosdb":
         cluster_id = _cynos_cluster_id(client, binding)
         return {
@@ -292,6 +398,4 @@ def binlog_download_url(binding_id: int, binlog_id: str) -> Dict[str, Any]:
             ),
             "query_target": binding["tc_instance_id"],
         }
-    if product == SELF_HOSTED_MYSQL_PRODUCT:
-        raise ValueError("自建 MySQL binlog 暂不支持生成浏览器下载链接")
     raise ValueError(f"不支持的腾讯云产品: {product}")

@@ -162,6 +162,19 @@ ensure_env_var "DBCHECK_FERNET_KEY_FILE" "${APP_DIR}/data/.fernet_key"
 chown "${APP_USER}:${APP_GROUP}" "${ENV_FILE}"
 chmod 640 "${ENV_FILE}"
 
+current_db_path="$(grep -E '^[[:space:]]*DBCHECK_SQLITE_PATH=' "${ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '[:space:]')"
+current_key_path="$(grep -E '^[[:space:]]*DBCHECK_FERNET_KEY_FILE=' "${ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '[:space:]')"
+if [[ "${current_db_path}" != "${APP_DIR}/data/dbcheck.db" ]]; then
+    echo "ERROR: ${ENV_FILE} has DBCHECK_SQLITE_PATH=${current_db_path}" >&2
+    echo "       It must be ${APP_DIR}/data/dbcheck.db in production." >&2
+    exit 1
+fi
+if [[ "${current_key_path}" != "${APP_DIR}/data/.fernet_key" ]]; then
+    echo "ERROR: ${ENV_FILE} has DBCHECK_FERNET_KEY_FILE=${current_key_path}" >&2
+    echo "       It must be ${APP_DIR}/data/.fernet_key in production." >&2
+    exit 1
+fi
+
 # ============================================================
 # systemd unit
 # ============================================================

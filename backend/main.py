@@ -12,10 +12,11 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from connectors import check_connectivity, execute_sql
 from models import (
@@ -85,6 +86,8 @@ from storage import (
 from tc_client import TCClient, TencentCloudSDKException
 from crypto import encrypt as encrypt_secret
 from crypto import decrypt as decrypt_secret
+from crypto import KEY_PATH as FERNET_KEY_PATH
+from storage import DB_PATH as SQLITE_DB_PATH
 
 
 def env_flag(name: str, default: bool = False) -> bool:
@@ -106,6 +109,12 @@ POLL_INTERVAL_SECONDS = int(os.getenv("DBCHECK_POLL_INTERVAL", "3600"))
 SCHEDULER_MAX_CONCURRENCY = int(os.getenv("DBCHECK_SCHEDULER_CONCURRENCY", "4"))
 SLOW_QUERY_PRODUCTS = {"cdb", "cynosdb", "postgres", "self_mysql", "self_postgresql"}
 
+APP_ROOT = Path(__file__).resolve().parent
+DEFAULT_DB_PATH = APP_ROOT / "dbcheck.db"
+DEFAULT_KEY_PATH = APP_ROOT / ".fernet_key"
+PRODUCTION_APP_ROOT = Path("/opt/dbcheck/app")
+PRODUCTION_DATA_ROOT = Path("/opt/dbcheck/data")
+
 
 def ensure_tencent_api_enabled(operation: str = "腾讯云 API 调用") -> None:
     if not TENCENT_API_ENABLED:
@@ -118,8 +127,46 @@ def ensure_tencent_api_enabled(operation: str = "腾讯云 API 调用") -> None:
         )
 
 
+def validate_runtime_storage_paths() -> None:
+    cwd = Path.cwd().resolve()
+    db_path = SQLITE_DB_PATH.resolve()
+    key_path = FERNET_KEY_PATH.resolve()
+
+    likely_production = cwd == PRODUCTION_APP_ROOT or db_path.is_relative_to(PRODUCTION_APP_ROOT) or key_path.is_relative_to(PRODUCTION_APP_ROOT)
+    if not likely_production:
+        return
+
+    errors = []
+    if db_path == DEFAULT_DB_PATH:
+        errors.append(
+            "DBCHECK_SQLITE_PATH 仍指向代码目录 /opt/dbcheck/app/dbcheck.db。"
+            " 请改到 /opt/dbcheck/data/dbcheck.db。"
+        )
+    if key_path == DEFAULT_KEY_PATH:
+        errors.append(
+            "DBCHECK_FERNET_KEY_FILE 仍指向代码目录 /opt/dbcheck/app/.fernet_key。"
+            " 请改到 /opt/dbcheck/data/.fernet_key。"
+        )
+    if db_path.is_relative_to(PRODUCTION_APP_ROOT):
+        errors.append(
+            f"当前 SQLite 路径在代码目录内：{db_path}。"
+            " 请设置 DBCHECK_SQLITE_PATH=/opt/dbcheck/data/dbcheck.db"
+        )
+    if key_path.is_relative_to(PRODUCTION_APP_ROOT):
+        errors.append(
+            f"当前 Fernet 密钥路径在代码目录内：{key_path}。"
+            " 请设置 DBCHECK_FERNET_KEY_FILE=/opt/dbcheck/data/.fernet_key"
+        )
+    if errors:
+        raise RuntimeError(
+            "生产环境存储路径配置错误。继续启动会导致代码更新后读到新空库或新密钥。\n"
+            + "\n".join(errors)
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_runtime_storage_paths()
     init_db()
     sched = scheduler_mod.SlowQueryScheduler(
         interval_seconds=POLL_INTERVAL_SECONDS,
@@ -558,6 +605,44 @@ def list_binlog_bindings_endpoint():
         state = repo_get_sync_state(row["id"])
         enriched.append(_to_binding_response({**row, **state}).model_dump())
     return success(data={"total": len(enriched), "items": enriched})
+
+
+def _content_disposition(filename: str) -> str:
+    ascii_name = "".join(
+        ch if ord(ch) < 128 and (ch.isalnum() or ch in "._-") else "_"
+        for ch in filename
+    ).strip("._")
+    ascii_name = ascii_name or "binlog"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename, safe='')}"
+
+
+@app.get("/api/binlogs/download")
+def download_binlog_endpoint(
+    binding_id: int = Query(..., description="绑定 ID"),
+    binlog_id: str = Query(..., description="Binlog ID"),
+):
+    binding = repo_get_binding(binding_id)
+    if not binding:
+        raise HTTPException(status_code=404, detail="绑定不存在")
+    if binding.get("tc_product") != "self_mysql":
+        raise HTTPException(status_code=400, detail="该接口仅支持自建 MySQL binlog 下载")
+    try:
+        data = binlog_service.download_self_hosted_mysql_binlog(binding_id, binlog_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
+
+    content = data["content"]
+    filename = data["file_name"]
+    return Response(
+        content=content,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": _content_disposition(filename),
+            "Content-Length": str(len(content)),
+        },
+    )
 
 
 @app.get("/api/binlogs/download-url", response_model=APIResponse)

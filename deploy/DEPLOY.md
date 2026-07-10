@@ -228,6 +228,9 @@ DBCHECK_CLOUD_BACKUP_ENABLED=true
 DBCHECK_SCHEDULER_ENABLED=true
 ```
 
+如果把这两个路径配到 `/opt/dbcheck/app` 或保留后端默认值,代码更新后服务可能会重新创建一个空的
+`dbcheck.db`,表现出来就是“生产实例资产突然全没了”。新版后端和 `install.sh` 会直接拒绝这种配置。
+
 ```bash
 sudo systemctl restart dbcheck
 curl -s http://127.0.0.1:8000/api/scheduler/status

@@ -88,6 +88,11 @@ DBCHECK_SCHEDULER_ENABLED=true
 `FILE` 权限，且 `mysqld` 能读取 `slow_query_log_file` 指向的文件。自建 PostgreSQL 读取
 `pg_stat_statements`。如果数据库侧没有开启这些统计/日志，接口会正常返回 0 条。
 
+自建 MySQL 归档日志下载通过 `SHOW BINARY LOGS` 校验文件名，再用 `LOAD_FILE()` 读取
+binlog 文件返回浏览器。MySQL 账号需要 `FILE` 权限，`secure_file_priv` 需要允许读取
+binlog 所在目录，且 `mysqld` 进程要有文件读取权限。单个文件默认最大下载 `256MB`，可用
+`DBCHECK_SELF_HOSTED_BINLOG_DOWNLOAD_MAX_BYTES` 调整。
+
 示例：
 
 ```bash
