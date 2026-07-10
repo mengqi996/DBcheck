@@ -48,7 +48,10 @@ PRODUCT_CONFIG = {
 
 def _client_for_binding(binding: Dict[str, Any]):
     if not _SDK_AVAILABLE:
-        raise RuntimeError("tencentcloud-sdk-python-monitor 未安装")
+        raise RuntimeError(
+            "腾讯云 Python Monitor SDK 未安装，请 pip install "
+            "tencentcloud-sdk-python-common tencentcloud-sdk-python-monitor"
+        )
 
     cred = storage.get_credential(binding["credential_id"], include_secret=False)
     secret_key = storage.get_decrypted_secret_key(binding["credential_id"])

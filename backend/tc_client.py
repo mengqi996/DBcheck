@@ -154,8 +154,11 @@ class TCClient:
     ):
         if not _SDK_AVAILABLE:
             raise RuntimeError(
-                "tencentcloud-sdk-python 未安装，请 pip install tencentcloud-sdk-python-cdb "
-                "tencentcloud-sdk-python-cynosdb tencentcloud-sdk-python-postgres"
+                "腾讯云 Python SDK 未安装，请 pip install "
+                "tencentcloud-sdk-python-common "
+                "tencentcloud-sdk-python-cdb "
+                "tencentcloud-sdk-python-cynosdb "
+                "tencentcloud-sdk-python-postgres"
             )
         self._cred = tc_credential.Credential(secret_id, secret_key)
         self._region = region

@@ -11,6 +11,7 @@ cx-Oracle==8.3.0
 pyodbc==5.0.1
 
 # 慢 SQL 模块依赖
+tencentcloud-sdk-python-common>=3.0.998
 tencentcloud-sdk-python-cdb>=3.0.998
 tencentcloud-sdk-python-cynosdb>=3.0.998
 tencentcloud-sdk-python-postgres>=3.0.998
