@@ -48,8 +48,10 @@ try:
         TencentCloudSDKException,
     )
     _SDK_AVAILABLE = True
-except ImportError:  # pragma: no cover - 仅在 SDK 缺失时触发
+    _SDK_IMPORT_ERROR = None
+except ImportError as exc:  # pragma: no cover - 仅在 SDK 缺失时触发
     _SDK_AVAILABLE = False
+    _SDK_IMPORT_ERROR = exc
     tc_credential = None
     ClientProfile = None
     HttpProfile = None
@@ -154,7 +156,8 @@ class TCClient:
     ):
         if not _SDK_AVAILABLE:
             raise RuntimeError(
-                "腾讯云 Python SDK 未安装，请 pip install "
+                "腾讯云 Python SDK 导入失败"
+                f"（{type(_SDK_IMPORT_ERROR).__name__}: {_SDK_IMPORT_ERROR}）。请 pip install "
                 "tencentcloud-sdk-python-common "
                 "tencentcloud-sdk-python-cdb "
                 "tencentcloud-sdk-python-cynosdb "

@@ -17,8 +17,10 @@ try:
     from tencentcloud.monitor.v20180724 import models as monitor_models
 
     _SDK_AVAILABLE = True
-except ImportError:  # pragma: no cover
+    _SDK_IMPORT_ERROR = None
+except ImportError as exc:  # pragma: no cover
     _SDK_AVAILABLE = False
+    _SDK_IMPORT_ERROR = exc
     tc_credential = None
     ClientProfile = None
     HttpProfile = None
@@ -49,7 +51,8 @@ PRODUCT_CONFIG = {
 def _client_for_binding(binding: Dict[str, Any]):
     if not _SDK_AVAILABLE:
         raise RuntimeError(
-            "腾讯云 Python Monitor SDK 未安装，请 pip install "
+            "腾讯云 Python Monitor SDK 导入失败"
+            f"（{type(_SDK_IMPORT_ERROR).__name__}: {_SDK_IMPORT_ERROR}）。请 pip install "
             "tencentcloud-sdk-python-common tencentcloud-sdk-python-monitor"
         )
 
