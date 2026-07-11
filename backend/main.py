@@ -129,9 +129,11 @@ def env_flag(name: str, default: bool = False) -> bool:
 TENCENT_API_ENABLED = env_flag("DBCHECK_TENCENT_API_ENABLED", True)
 CLOUD_BACKUP_ENABLED = env_flag("DBCHECK_CLOUD_BACKUP_ENABLED", True)
 SCHEDULER_ENABLED = env_flag("DBCHECK_SCHEDULER_ENABLED", True)
+BACKUP_SYNC_ENABLED = env_flag("DBCHECK_BACKUP_SYNC_ENABLED", True)
 
 POLL_INTERVAL_SECONDS = int(os.getenv("DBCHECK_POLL_INTERVAL", "3600"))
 SCHEDULER_MAX_CONCURRENCY = int(os.getenv("DBCHECK_SCHEDULER_CONCURRENCY", "4"))
+BACKUP_SYNC_INTERVAL_SECONDS = int(os.getenv("DBCHECK_BACKUP_SYNC_INTERVAL", "3600"))
 SLOW_QUERY_PRODUCTS = {"cdb", "cynosdb", "postgres", "self_mysql", "self_postgresql"}
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -209,13 +211,21 @@ async def lifespan(app: FastAPI):
         interval_seconds=POLL_INTERVAL_SECONDS,
         max_concurrency=SCHEDULER_MAX_CONCURRENCY,
     )
+    backup_sched = scheduler_mod.BackupSyncScheduler(
+        interval_seconds=BACKUP_SYNC_INTERVAL_SECONDS,
+    )
     app.state.scheduler = sched
+    app.state.backup_scheduler = backup_sched
     app.state.scheduler_auto_enabled = SCHEDULER_ENABLED and TENCENT_API_ENABLED
+    app.state.backup_scheduler_auto_enabled = BACKUP_SYNC_ENABLED and TENCENT_API_ENABLED
     if SCHEDULER_ENABLED and TENCENT_API_ENABLED:
         await sched.start()
+    if BACKUP_SYNC_ENABLED and TENCENT_API_ENABLED:
+        await backup_sched.start()
     try:
         yield
     finally:
+        await backup_sched.stop()
         await sched.stop()
 
 
@@ -1492,11 +1502,17 @@ def explain_slow_query(request: Request, slow_query_id: int):
 def scheduler_status_endpoint(request: Request):
     require_authenticated_user(request)
     sched: scheduler_mod.SlowQueryScheduler = app.state.scheduler
+    backup_sched: scheduler_mod.BackupSyncScheduler = app.state.backup_scheduler
     data = sched.status()
     data["tencent_api_enabled"] = TENCENT_API_ENABLED
     data["cloud_backup_enabled"] = CLOUD_BACKUP_ENABLED
     data["scheduler_enabled"] = SCHEDULER_ENABLED
     data["auto_enabled"] = bool(getattr(app.state, "scheduler_auto_enabled", False))
+    data["backup_sync_enabled"] = BACKUP_SYNC_ENABLED
+    data["backup_sync_auto_enabled"] = bool(
+        getattr(app.state, "backup_scheduler_auto_enabled", False)
+    )
+    data["backup_sync"] = backup_sched.status()
     return success(data=data)
 
 

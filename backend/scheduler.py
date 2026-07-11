@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+import backup_service
 import slow_query_service
 import storage
 from async_compat import to_thread
@@ -149,3 +150,89 @@ class SlowQueryScheduler:
                 await to_thread(slow_query_service.poll_one_binding, binding)
             finally:
                 self._active_polls -= 1
+
+
+class BackupSyncScheduler:
+    def __init__(self, interval_seconds: int = 3600):
+        self.interval_seconds = max(60, int(interval_seconds))
+        self._tick_lock = asyncio.Lock()
+        self._task: Optional[asyncio.Task] = None
+        self._stop_event: Optional[asyncio.Event] = None
+        self._last_tick_at: Optional[str] = None
+        self._last_result: Optional[dict] = None
+        self._last_error: Optional[str] = None
+        self._active = False
+
+    async def start(self) -> None:
+        if self._task and not self._task.done():
+            return
+        self._stop_event = asyncio.Event()
+        self._task = asyncio.create_task(self._run(), name="backup-sync-scheduler")
+        logger.info("BackupSyncScheduler started (interval=%ss)", self.interval_seconds)
+
+    async def stop(self) -> None:
+        if not self._task:
+            return
+        if self._stop_event:
+            self._stop_event.set()
+        try:
+            await asyncio.wait_for(self._task, timeout=5.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            self._task.cancel()
+        self._task = None
+        self._stop_event = None
+        logger.info("BackupSyncScheduler stopped")
+
+    def status(self) -> dict:
+        return {
+            "running": bool(self._task and not self._task.done()),
+            "interval_seconds": self.interval_seconds,
+            "last_tick_at": self._last_tick_at,
+            "last_result": self._last_result,
+            "last_error": self._last_error,
+            "active": self._active,
+        }
+
+    async def _run(self) -> None:
+        assert self._stop_event is not None
+        stop_event = self._stop_event
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=self.interval_seconds)
+                if stop_event.is_set():
+                    break
+            except asyncio.TimeoutError:
+                await self._tick()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:  # noqa: BLE001
+                logger.exception("backup sync scheduler tick failed: %s", e)
+                self._last_error = f"{type(e).__name__}: {e}"
+
+    async def _tick(self) -> None:
+        async with self._tick_lock:
+            self._active = True
+            self._last_tick_at = _utc_now_iso()
+            try:
+                result = await to_thread(backup_service.sync_tencent_backups)
+                self._last_result = result
+                self._last_error = None
+                if result.get("errors"):
+                    logger.warning(
+                        "Backup sync completed with %s errors: %s",
+                        len(result["errors"]),
+                        result["errors"],
+                    )
+                else:
+                    logger.info(
+                        "Backup sync completed (fetched=%s inserted=%s updated=%s skipped=%s)",
+                        result.get("fetched"),
+                        result.get("inserted"),
+                        result.get("updated"),
+                        result.get("skipped"),
+                    )
+            except Exception as e:  # noqa: BLE001
+                self._last_error = f"{type(e).__name__}: {e}"
+                logger.exception("backup sync failed: %s", e)
+            finally:
+                self._active = False

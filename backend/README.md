@@ -77,8 +77,10 @@ DBCHECK_FERNET_KEY_FILE=/opt/dbcheck/data/.fernet_key
 
 - `DBCHECK_TENCENT_API_ENABLED=true`：腾讯云 API 总开关，关闭后不会主动调用腾讯云。
 - `DBCHECK_CLOUD_BACKUP_ENABLED=true`：允许创建真实腾讯云备份任务。
+- `DBCHECK_BACKUP_SYNC_ENABLED=true`：启用腾讯云备份信息自动同步。
+- 备份信息自动同步间隔默认 `3600` 秒；可用 `DBCHECK_BACKUP_SYNC_INTERVAL=3600` 调整。
 - `DBCHECK_SCHEDULER_ENABLED=true`：启用慢 SQL 自动轮询。
-- 自动轮询间隔默认 `3600` 秒；可用 `DBCHECK_POLL_INTERVAL=3600` 调整。
+- 慢 SQL 自动轮询间隔默认 `3600` 秒；可用 `DBCHECK_POLL_INTERVAL=3600` 调整。
 
 生产环境 `/opt/dbcheck/.env` 中推荐不要在值后面加行尾注释；后端会容错忽略
 `#` 后面的内容，但纯值最容易排查。推荐写成：
@@ -89,6 +91,10 @@ DBCHECK_TENCENT_API_ENABLED=true
 
 # 真实创建腾讯云备份任务
 DBCHECK_CLOUD_BACKUP_ENABLED=true
+
+# 腾讯云备份信息自动同步
+DBCHECK_BACKUP_SYNC_ENABLED=true
+DBCHECK_BACKUP_SYNC_INTERVAL=3600
 
 # 慢 SQL 自动轮询
 DBCHECK_SCHEDULER_ENABLED=true
