@@ -104,22 +104,23 @@ class SlowQueryScheduler:
 
         while not stop_event.is_set():
             try:
-                # 同时等待 interval 超时或 stop / trigger 信号
+                # 同时等待 interval 超时或 stop / trigger 信号，并显式回收
+                # 未完成 task，避免在事件循环里留下未取回的取消任务。
+                wait_tasks = {
+                    asyncio.create_task(stop_event.wait()),
+                    asyncio.create_task(trigger_event.wait()),
+                    asyncio.create_task(asyncio.sleep(self.interval_seconds)),
+                }
                 done, _pending = await asyncio.wait(
-                    [
-                        asyncio.create_task(stop_event.wait()),
-                        asyncio.create_task(trigger_event.wait()),
-                        asyncio.create_task(asyncio.sleep(self.interval_seconds)),
-                    ],
+                    wait_tasks,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
-                # 取消未完成项
-                for t in done:
-                    pass
-                # 显式取消所有未完成任务
-                for t in asyncio.all_tasks():
-                    if t in _pending:
-                        t.cancel()
+                for task in _pending:
+                    task.cancel()
+                if _pending:
+                    await asyncio.gather(*_pending, return_exceptions=True)
+                for task in done:
+                    task.result()
                 if trigger_event.is_set():
                     trigger_event.clear()
                 if stop_event.is_set():

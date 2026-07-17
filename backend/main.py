@@ -248,6 +248,24 @@ app.add_middleware(
 )
 
 
+def ensure_scheduler_state() -> tuple[
+    scheduler_mod.SlowQueryScheduler,
+    scheduler_mod.BackupSyncScheduler,
+]:
+    if not hasattr(app.state, "scheduler"):
+        app.state.scheduler = scheduler_mod.SlowQueryScheduler(
+            interval_seconds=POLL_INTERVAL_SECONDS,
+            max_concurrency=SCHEDULER_MAX_CONCURRENCY,
+        )
+        app.state.scheduler_auto_enabled = False
+    if not hasattr(app.state, "backup_scheduler"):
+        app.state.backup_scheduler = scheduler_mod.BackupSyncScheduler(
+            interval_seconds=BACKUP_SYNC_INTERVAL_SECONDS,
+        )
+        app.state.backup_scheduler_auto_enabled = False
+    return app.state.scheduler, app.state.backup_scheduler
+
+
 @app.post("/api/auth/login", response_model=APIResponse)
 def login(payload: AuthLoginRequest):
     user = get_user_by_username(payload.username, include_secret=True)
@@ -1466,7 +1484,7 @@ async def refresh_slow_queries(
     tencent_triggered = False
     tencent_skipped_reason = None
     if TENCENT_API_ENABLED:
-        sched = app.state.scheduler
+        sched, _ = ensure_scheduler_state()
         tencent_triggered = await sched.trigger_now()
     else:
         tencent_skipped_reason = "腾讯云 API 调用已关闭，已跳过腾讯云慢查询同步"
@@ -1536,8 +1554,7 @@ def explain_slow_query(request: Request, slow_query_id: int):
 @app.get("/api/scheduler/status", response_model=APIResponse)
 def scheduler_status_endpoint(request: Request):
     require_authenticated_user(request)
-    sched: scheduler_mod.SlowQueryScheduler = app.state.scheduler
-    backup_sched: scheduler_mod.BackupSyncScheduler = app.state.backup_scheduler
+    sched, backup_sched = ensure_scheduler_state()
     data = sched.status()
     data["tencent_api_enabled"] = TENCENT_API_ENABLED
     data["cloud_backup_enabled"] = CLOUD_BACKUP_ENABLED
