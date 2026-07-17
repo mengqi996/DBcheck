@@ -56,6 +56,17 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertIn("请先登录", response.json()["detail"])
 
+    def test_health_endpoint_does_not_require_login(self) -> None:
+        with self._client() as client:
+            response = client.get("/api/health")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["code"], 200)
+        self.assertEqual(body["data"]["status"], "ok")
+        self.assertTrue(body["data"]["database"]["ok"])
+        self.assertEqual(body["data"]["version"], main.app.version)
+
     def test_default_admin_can_login_and_read_me(self) -> None:
         with self._client() as client:
             token = self._login(client)

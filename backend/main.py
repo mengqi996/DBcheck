@@ -89,6 +89,7 @@ from storage import (
     get_user as repo_get_user,
     get_user_by_session_token_hash,
     get_user_by_username,
+    get_connection,
     init_db,
     list_backups,
     list_bindings,
@@ -340,6 +341,40 @@ def delete_user_account(request: Request, user_id: int):
 
 def success(message: str = "success", data: Optional[dict] = None, code: int = 200) -> APIResponse:
     return APIResponse(code=code, message=message, data=data)
+
+
+@app.get("/api/health", response_model=APIResponse)
+def health_check(response: Response):
+    database = {"ok": True, "path": str(SQLITE_DB_PATH)}
+    try:
+        with get_connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+    except Exception as exc:  # noqa: BLE001
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        database = {
+            "ok": False,
+            "path": str(SQLITE_DB_PATH),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    healthy = bool(database["ok"])
+    data = {
+        "status": "ok" if healthy else "degraded",
+        "version": app.version,
+        "database": database,
+        "tencent_api_enabled": TENCENT_API_ENABLED,
+        "scheduler_enabled": SCHEDULER_ENABLED,
+        "scheduler_auto_enabled": bool(getattr(app.state, "scheduler_auto_enabled", False)),
+        "backup_sync_enabled": BACKUP_SYNC_ENABLED,
+        "backup_sync_auto_enabled": bool(
+            getattr(app.state, "backup_scheduler_auto_enabled", False)
+        ),
+    }
+    return success(
+        message="服务正常" if healthy else "服务异常",
+        data=data,
+        code=200 if healthy else 503,
+    )
 
 
 def _user_response(row: dict) -> UserResponse:

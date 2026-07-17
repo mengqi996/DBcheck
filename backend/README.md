@@ -165,10 +165,11 @@ DBCHECK_SELF_HOSTED_BINLOG_DOWNLOAD_MAX_BYTES=268435456
 
 ## 主要 API
 
-所有业务接口除登录外都需要 `Authorization: Bearer <token>`。用户、凭证、绑定、备份创建/删除、腾讯云发现/导入、慢 SQL 刷新等写操作需要 DBA。
+所有业务接口除登录和健康检查外都需要 `Authorization: Bearer <token>`。用户、凭证、绑定、备份创建/删除、腾讯云发现/导入、慢 SQL 刷新等写操作需要 DBA。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| GET | `/api/health` | 服务健康检查，不需要登录 |
 | POST | `/api/auth/login` | 登录并获取 token |
 | GET | `/api/auth/me` | 当前用户 |
 | POST | `/api/auth/logout` | 退出登录 |
